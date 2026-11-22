@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>MacMahon's squares — 24 tiles, 3 colours, 1.75 × 10³⁸ arrangements</title>
+        <meta
+            name="description"
+            content="MacMahon's squares explained: 24 edge-coloured tiles, one 6 × 4 rectangle, and 1.75 × 10^38 possible arrangements."
+        />
+        <link rel="stylesheet" href="/src/style.css" />
+    </head>
+    <body class="min-h-screen">
+        <!-- Hero -->
+        <header
+            class="mx-auto grid max-w-6xl items-center gap-12 px-6 pb-14 pt-16 md:grid-cols-[1.1fr_0.9fr] md:pt-24"
+        >
+            <div>
+                <p class="eyebrow mb-5">MacMahon's squares · 1921</p>
+                <h1
+                    class="font-serif text-5xl leading-[0.98] tracking-[-0.025em] sm:text-6xl lg:text-7xl"
+                >
+                    Twenty-four squares,<br />
+                    three colours,<br />
+                    1.75 × 10³⁸ arrangements.
+                </h1>
+                <p class="mt-7 max-w-xl text-lg leading-relaxed text-muted">
+                    Each piece is a square cut into four triangles. The task is to lay all of them
+                    into a 6 × 4 rectangle so that touching edges agree and the whole border is one
+                    colour. It sounds harmless. The arithmetic disagrees.
+                </p>
+                <nav class="mt-8 flex flex-wrap gap-x-6 gap-y-2 font-mono text-[13px]">
+                    <a class="border-b border-line pb-0.5 hover:border-accent hover:text-accent" href="#puzzle">The puzzle</a>
+                    <a class="border-b border-line pb-0.5 hover:border-accent hover:text-accent" href="#pieces">The pieces</a>
+                    <a class="border-b border-line pb-0.5 hover:border-accent hover:text-accent" href="#number">The number</a>
+                    <a class="border-b border-line pb-0.5 hover:border-accent hover:text-accent" href="#machine">The machine</a>
+                    <a class="border-b border-line pb-0.5 hover:border-accent hover:text-accent" href="#complexity">Complexity</a>
+                </nav>
+            </div>
+            <div>
+                <div id="hero-board" class="board"></div>
+                <p class="caption">One solution. Every outer edge is red.</p>
+            </div>
+        </header>
+
+        <main>
+            <!-- The puzzle -->
+            <section id="puzzle" class="mx-auto max-w-6xl border-t border-line px-6 py-16 md:py-24">
+                <p class="eyebrow mb-5">01 — The puzzle</p>
+                <div class="grid gap-10 lg:grid-cols-2 lg:gap-20">
+                    <div>
+                        <h2 class="font-serif text-4xl leading-tight tracking-tight sm:text-5xl">
+                            Four rules, twenty-four tiles
+                        </h2>
+                        <ol class="mt-8">
+                            <li class="rule"><span class="min-w-5 pt-0.5 font-mono text-[11px] text-accent">01</span><span>All twenty-four pieces must be used.</span></li>
+                            <li class="rule"><span class="min-w-5 pt-0.5 font-mono text-[11px] text-accent">02</span><span>Each piece may be rotated in four directions.</span></li>
+                            <li class="rule"><span class="min-w-5 pt-0.5 font-mono text-[11px] text-accent">03</span><span>Edges that touch must share the same colour.</span></li>
+                            <li class="rule border-b-0"><span class="min-w-5 pt-0.5 font-mono text-[11px] text-accent">04</span><span>The twenty outer edges are all red.</span></li>
+                        </ol>
+                    </div>
+                    <div class="text-lg leading-relaxed text-[#322e27]">
+                        <p>
+                            The puzzle was published by Percy MacMahon in
+                            <em>New Mathematical Pastimes</em> in 1921. The set is not an arbitrary
+                            selection: it contains <strong>every</strong> possible square that can be
+                            made from three colours.
+                        </p>
+                        <p class="mt-4">
+                            That completeness is what makes it a good mathematical toy — and what
+                            makes it a terrible candidate for brute force, as the next two sections
+                            show.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- The pieces -->
+            <section id="pieces" class="mx-auto max-w-6xl border-t border-line px-6 py-16 md:py-24">
+                <p class="eyebrow mb-5">02 — The pieces</p>
+                <div class="max-w-3xl">
+                    <h2 class="font-serif text-4xl leading-tight tracking-tight sm:text-5xl">
+                        From 81 colourings to 24 tiles
+                    </h2>
+                    <p class="mt-6 text-lg leading-relaxed text-[#322e27]">
+                        A square has four edges, each painted with one of three colours, so there
+                        are 3<sup>4</sup> = 81 colourings. But a tile you can rotate is the same
+                        tile: identifying colourings up to rotation leaves only 24 classes.
+                    </p>
+                    <div class="mt-6 flex flex-wrap items-baseline gap-x-6 gap-y-2 rounded border border-line bg-[#faf7f1] px-5 py-4 font-mono text-[15px]">
+                        <span>(3⁴ + 3¹ + 3² + 3¹) / 4</span>
+                        <span class="text-muted">= 96 / 4 = <strong class="text-ink">24</strong></span>
+                    </div>
+                    <p class="mt-6 text-lg leading-relaxed text-[#322e27]">
+                        That is Burnside's lemma: average the colourings fixed by each of the four
+                        rotations. Three tiles are single-coloured, six use two colours, the rest
+                        use three. Here is the complete set.
+                    </p>
+                </div>
+                <div id="pieces-gallery" class="mt-10 grid grid-cols-3 gap-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8"></div>
+                <p class="mt-4 font-mono text-[11px] text-muted">
+                    R red · B white · L blue — the four letters are the north, east, south and west edges.
+                </p>
+            </section>
+
+            <!-- The number -->
+            <section id="number" class="mx-auto max-w-6xl border-t border-line px-6 py-16 md:py-24">
+                <p class="eyebrow mb-5">03 — The number</p>
+                <div class="max-w-3xl">
+                    <h2 class="font-serif text-4xl leading-tight tracking-tight sm:text-5xl">
+                        How many arrangements are there?
+                    </h2>
+                    <p class="mt-6 text-lg leading-relaxed text-[#322e27]">
+                        Count the naive way: choose an order for the 24 tiles, then an orientation
+                        for each one. That is 24! permutations times 4<sup>24</sup> orientations.
+                    </p>
+                </div>
+
+                <div class="mt-10 grid gap-px overflow-hidden rounded border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
+                    <div class="bg-[#faf7f1] p-6">
+                        <p class="font-serif text-4xl tracking-tight">24!</p>
+                        <p class="mt-3 text-sm leading-snug text-muted">orders of the pieces</p>
+                        <p class="mt-1 font-mono text-[11px] leading-relaxed text-muted">620 448 401 733 239 439 360 000</p>
+                    </div>
+                    <div class="bg-[#faf7f1] p-6">
+                        <p class="font-serif text-4xl tracking-tight">4<sup class="text-[0.6em]">24</sup></p>
+                        <p class="mt-3 text-sm leading-snug text-muted">orientations</p>
+                        <p class="mt-1 font-mono text-[11px] leading-relaxed text-muted">281 474 976 710 656</p>
+                    </div>
+                    <div class="bg-ink p-6 text-paper">
+                        <p class="font-serif text-4xl tracking-tight">1.75 × 10<sup class="text-[0.6em]">38</sup></p>
+                        <p class="mt-3 text-sm leading-snug text-[#cfc6b6]">arrangements to examine</p>
+                        <p class="mt-1 font-mono text-[11px] leading-relaxed text-[#cfc6b6]">24! × 4²⁴</p>
+                    </div>
+                    <div class="bg-[#faf7f1] p-6">
+                        <p class="font-serif text-4xl tracking-tight">5.5 × 10<sup class="text-[0.6em]">21</sup></p>
+                        <p class="mt-3 text-sm leading-snug text-muted">years at one billion per second</p>
+                        <p class="mt-1 font-mono text-[11px] leading-relaxed text-muted">≈ 400 billion ages of the universe</p>
+                    </div>
+                </div>
+
+                <p class="mt-6 font-mono text-[12px] leading-relaxed text-muted">
+                    24! × 4²⁴ =
+                    174 640 699 428 027 308 978 246 462 377 820 160 000
+                    <span class="whitespace-nowrap">≈ 1.746 × 10³⁸</span>
+                </p>
+
+                <p class="mt-8 max-w-3xl text-lg leading-relaxed text-[#322e27]">
+                    For scale: the observable universe contains something like 10<sup>80</sup>
+                    atoms, so 10<sup>38</sup> is not “astronomical” — it is merely hopeless.
+                    Checking a billion arrangements per second for fourteen billion years would
+                    still leave essentially all of them untouched.
+                </p>
+            </section>
+
+            <!-- What it takes -->
+            <section class="mx-auto max-w-6xl border-t border-line px-6 py-16 md:py-24">
+                <p class="eyebrow mb-5">04 — What it actually takes</p>
+                <div class="grid gap-10 lg:grid-cols-2 lg:gap-20">
+                    <div>
+                        <h2 class="font-serif text-4xl leading-tight tracking-tight sm:text-5xl">
+                            Nobody enumerates them
+                        </h2>
+                    </div>
+                    <div class="text-lg leading-relaxed text-[#322e27]">
+                        <p>
+                            Real solvers fill the grid cell by cell and reject a piece the moment it
+                            fails to match its neighbours. The red border does most of the work: it
+                            pins down the twenty outer edges before the search starts.
+                        </p>
+                        <p class="mt-4">
+                            Even so, solutions are scarce. There are
+                            <strong>12 261</strong> ways to complete the 6 × 4 board — a figure
+                            produced by a 1964 computer run that took about forty hours.
+                        </p>
+                        <p class="mt-4">
+                            Modern code does it in seconds, but the shape of the problem does not
+                            change: the useful work is pruning, not enumerating.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- The counting machine -->
+            <section id="machine" class="mx-auto max-w-6xl border-t border-line px-6 py-16 md:py-24">
+                <p class="eyebrow mb-5">05 — The counting machine</p>
+                <div class="max-w-3xl">
+                    <h2 class="font-serif text-4xl leading-tight tracking-tight sm:text-5xl">
+                        Three machines, one board
+                    </h2>
+                    <p class="mt-6 text-lg leading-relaxed text-[#322e27]">
+                        The same 6 × 4 board is filled by three different machines. The first checks
+                        everything; each of the next two removes one thing. In every card the small
+                        board is the machine at work, slowed down to one tile every 100 ms so that
+                        you can watch it.
+                    </p>
+                </div>
+
+                <!-- Step 0 -->
+                <div class="mt-12">
+                    <h3 class="font-serif text-2xl tracking-tight">Step 0 — nothing removed</h3>
+                    <p class="mt-2 max-w-3xl text-[15.5px] leading-relaxed text-muted">
+                        The machine fills all 24 cells without checking a single edge, then looks at
+                        the finished board. The full
+                        <span class="font-mono">24! × 4²⁴</span> arrangements. In the preview, the
+                        red flash is a completed board being thrown away.
+                    </p>
+                    <article class="experiment mt-5 rounded border border-line bg-[#faf7f1]" data-kind="count" data-divisor="1">
+                        <div class="flex flex-wrap items-start justify-between gap-4 px-5 pt-5">
+                            <p class="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Brute force · 10 boards per second</p>
+                            <button type="button" data-run class="rounded bg-ink px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-paper transition hover:bg-accent">Run the test</button>
+                        </div>
+                        <div class="mt-4 grid gap-5 px-5 pb-5 sm:grid-cols-[minmax(0,220px)_1fr]">
+                            <div class="preview" data-preview></div>
+                            <dl class="grid grid-cols-2 content-start gap-x-5 gap-y-4 sm:grid-cols-3">
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Arrangements</dt><dd class="mt-1 font-mono text-[15px]" data-out="total">—</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Total time</dt><dd class="mt-1 font-mono text-[15px]" data-out="eta">—</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Elapsed</dt><dd class="mt-1 font-mono text-[15px]" data-out="elapsed">0 s</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Iterations</dt><dd class="mt-1 font-mono text-[15px]" data-out="iter">0</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Completion</dt><dd class="mt-1 font-mono text-[15px]" data-out="pct">0 %</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Solutions found</dt><dd class="mt-1 font-mono text-[15px]" data-out="sols">0</dd></div>
+                            </dl>
+                        </div>
+                    </article>
+                </div>
+
+                <!-- Step 1 -->
+                <div class="mt-12">
+                    <h3 class="font-serif text-2xl tracking-tight">Step 1 — prune at the first mismatch</h3>
+                    <p class="mt-2 max-w-3xl text-[15.5px] leading-relaxed text-muted">
+                        A tile is now placed only if it matches the tile on its left and the tile
+                        above. One test, and the whole subtree below the rejected placement is never
+                        explored: the boards that would have started with it are never built. In the
+                        preview you can see it — tiles appear, and when a branch dies they come back
+                        off one by one.
+                    </p>
+                    <p class="mt-2 max-w-3xl text-[15.5px] leading-relaxed text-muted">
+                        There is no simple total for this machine: the search is a tree of partial
+                        boards, not a flat list, and its exact size is not a number we can write
+                        down here. What changes is the work — the
+                        <span class="font-mono">10³⁸</span> complete boards are never built.
+                    </p>
+                    <article class="experiment mt-5 rounded border border-line bg-[#faf7f1]" data-kind="prune">
+                        <div class="flex flex-wrap items-start justify-between gap-4 px-5 pt-5">
+                            <p class="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Pruning · one bad edge kills the branch</p>
+                            <button type="button" data-run class="rounded bg-ink px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-paper transition hover:bg-accent">Run the test</button>
+                        </div>
+                        <div class="mt-4 grid gap-5 px-5 pb-5 sm:grid-cols-[minmax(0,220px)_1fr]">
+                            <div class="preview" data-preview></div>
+                            <dl class="grid grid-cols-2 content-start gap-x-5 gap-y-4 sm:grid-cols-3">
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Placements tried</dt><dd class="mt-1 font-mono text-[15px]" data-out="placements">0</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Dead ends</dt><dd class="mt-1 font-mono text-[15px]" data-out="deadends">0</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Elapsed</dt><dd class="mt-1 font-mono text-[15px]" data-out="elapsed">0 s</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Solutions found</dt><dd class="mt-1 font-mono text-[15px]" data-out="sols">0</dd></div>
+                            </dl>
+                        </div>
+                    </article>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="mt-12">
+                    <h3 class="font-serif text-2xl tracking-tight">Step 2 — keep pruning, pin the all-red tile</h3>
+                    <p class="mt-2 max-w-3xl text-[15.5px] leading-relaxed text-muted">
+                        Same machine as step 1, with one extra rule. Take the tile that is red on
+                        all four edges, <span class="font-mono">RRRR</span>, and forbid it anywhere
+                        outside the top-left quarter of the board. The four quarters are
+                        interchangeable — flipping the board top to bottom or left to right walks
+                        from one to the next — so one quarter is enough, and the search space is
+                        divided by four.
+                    </p>
+                    <article class="experiment mt-5 rounded border border-line bg-[#faf7f1]" data-kind="prune" data-lock="quarter">
+                        <div class="flex flex-wrap items-start justify-between gap-4 px-5 pt-5">
+                            <p class="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Pruning + all-red tile in the top-left quarter</p>
+                            <button type="button" data-run class="rounded bg-ink px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-paper transition hover:bg-accent">Run the test</button>
+                        </div>
+                        <div class="mt-4 grid gap-5 px-5 pb-5 sm:grid-cols-[minmax(0,220px)_1fr]">
+                            <div class="preview" data-preview></div>
+                            <dl class="grid grid-cols-2 content-start gap-x-5 gap-y-4 sm:grid-cols-3">
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Placements tried</dt><dd class="mt-1 font-mono text-[15px]" data-out="placements">0</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Dead ends</dt><dd class="mt-1 font-mono text-[15px]" data-out="deadends">0</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Elapsed</dt><dd class="mt-1 font-mono text-[15px]" data-out="elapsed">0 s</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Solutions found</dt><dd class="mt-1 font-mono text-[15px]" data-out="sols">0</dd></div>
+                            </dl>
+                        </div>
+                    </article>
+                </div>
+
+                <p class="mt-10 max-w-3xl text-lg leading-relaxed text-[#322e27]">
+                    Pinning the all-red tile in one quarter divides the brute force by four:
+                    1.4 × 10²⁹ years instead of 5.5 × 10²⁹. On a 38-digit number that is a rounding
+                    error. The step that changes the nature of the problem is the one before it —
+                    refusing a tile as soon as it does not fit.
+                </p>
+            </section>
+
+            <!-- Complexity -->
+            <section id="complexity" class="mx-auto max-w-6xl border-t border-line px-6 py-16 md:py-24">
+                <p class="eyebrow mb-5">06 — Complexity</p>
+                <div class="max-w-3xl">
+                    <h2 class="font-serif text-4xl leading-tight tracking-tight sm:text-5xl">
+                        Is it an NP problem?
+                    </h2>
+                    <p class="mt-6 text-lg leading-relaxed text-[#322e27]">
+                        <strong>In NP, yes.</strong> A filled board is checked in a single pass:
+                        38 interior edges plus 20 border edges. The certificate is 24 tiles long and
+                        verification is linear.
+                    </p>
+                    <p class="mt-4 text-lg leading-relaxed text-[#322e27]">
+                        <strong>NP-complete as a family, yes.</strong> The general question — can a
+                        given set of edge-coloured tiles cover a given region? — is NP-complete
+                        (Demaine &amp; Demaine, 2007), and even the 1 × n case is NP-hard (Bosboom
+                        et al., 2017). MacMahon's squares are one instance of that family.
+                    </p>
+                    <p class="mt-4 text-lg leading-relaxed text-[#322e27]">
+                        <strong>The 24-tile puzzle itself, no.</strong> A fixed instance has a fixed
+                        answer; it is a constant, not an asymptotic question. What is NP-complete is
+                        the problem parameterised by the number of tiles and colours.
+                    </p>
+                </div>
+            </section>
+        </main>
+
+        <footer class="mx-auto max-w-6xl border-t border-line px-6 py-10 pb-20">
+            <p class="max-w-3xl text-[13px] leading-relaxed text-muted">
+                After P. A. MacMahon, <em>New Mathematical Pastimes</em> (1921), and the CodeProject
+                article by Pascal Ganaye (2005). Tiles, board and page generated with Vite,
+                TypeScript and Tailwind CSS.
+            </p>
+        </footer>
+
+        <script type="module" src="/src/main.ts"></script>
+    </body>
+</html>

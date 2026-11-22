@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+@theme {
+    --color-paper: #f4efe6;
+    --color-ink: #191712;
+    --color-muted: #6f6759;
+    --color-line: #ddd4c4;
+    --color-accent: #b83a2e;
+    --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+        sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas,
+        monospace;
+}
+
+@layer base {
+    html {
+        scroll-behavior: smooth;
+    }
+
+    body {
+        @apply bg-paper text-ink font-sans antialiased;
+    }
+
+    ::selection {
+        @apply bg-accent/15;
+    }
+}
+
+@layer components {
+    .eyebrow {
+        @apply font-mono text-[11px] uppercase tracking-[0.18em] text-accent;
+    }
+
+    .board {
+        @apply bg-ink p-1.5 rounded-[3px] shadow-[0_18px_40px_-22px_rgba(25,23,18,0.55)];
+    }
+
+    .board__grid {
+        @apply grid gap-0;
+    }
+
+    .board svg {
+        @apply block w-full h-auto;
+    }
+
+    .piece-card {
+        @apply m-0 rounded-[4px] border border-line bg-[#faf7f1] p-2 transition duration-200;
+    }
+
+    .piece-card:hover {
+        @apply -translate-y-0.5 border-[#c9bda9] shadow-[0_12px_22px_-16px_rgba(25,23,18,0.5)];
+    }
+
+    .piece-card svg {
+        @apply block h-auto w-full rounded-[2px] aspect-square;
+    }
+
+    .caption {
+        @apply mt-3 text-right font-mono text-[11px] tracking-tight text-muted;
+    }
+
+    .rule {
+        @apply flex gap-4 border-b border-line py-3 text-[15px];
+    }
+}
+
+/* Counting machine */
+[data-out] {
+    font-variant-numeric: tabular-nums;
+}
+
+@keyframes tickflash {
+    from {
+        color: var(--color-accent);
+    }
+    to {
+        color: inherit;
+    }
+}
+
+.tickflash {
+    animation: tickflash 220ms ease-out;
+}
+
+/* Live board preview */
+.preview {
+    align-self: start;
+    max-width: 260px;
+    border-radius: 3px;
+    transition: box-shadow 150ms ease;
+}
+
+.preview__grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0;
+    padding: 4px;
+    background: var(--color-ink);
+    border-radius: 3px;
+}
+
+.preview__grid svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.preview__empty {
+    aspect-ratio: 1 / 1;
+    background: #f4efe6;
+    box-shadow: inset 0 0 0 1px #e2d9c9;
+}
+
+.preview.is-invalid {
+    box-shadow: 0 0 0 3px var(--color-accent);
+}
+
+.preview.is-solved {
+    box-shadow: 0 0 0 3px #2f7a4f;
+}
