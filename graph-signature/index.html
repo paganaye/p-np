@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Graph signatures — K18, two colours</title>
+        <link rel="stylesheet" href="/src/style.css" />
+    </head>
+    <body class="min-h-screen">
+        <header class="mx-auto max-w-7xl px-6 pb-6 pt-10">
+            <p class="eyebrow mb-4">Ramsey · canonical labelling</p>
+            <h1 class="font-serif text-4xl leading-tight tracking-tight sm:text-5xl">
+                Graph signatures
+            </h1>
+            <p class="mt-4 max-w-2xl text-[15.5px] leading-relaxed text-muted">
+                A complete graph on <strong><span id="graph-size">18</span> vertices</strong> with two colours. Click any edge to
+                flip it between red and blue; the signature below is the canonical labelling of the
+                red graph (blue is its complement).
+            </p>
+        </header>
+
+        <main class="mx-auto grid max-w-7xl gap-8 px-6 pb-16 lg:grid-cols-[minmax(0,660px)_1fr]">
+            <section>
+                <div class="mb-4 flex flex-wrap items-center gap-3">
+                    <label for="node-count" class="stat">Vertices</label>
+                    <input id="node-count" type="range" min="3" max="18" value="18" class="w-44 accent-[#b83a2e]" />
+                    <input id="node-number" type="number" min="3" max="18" value="18" class="w-16 rounded border border-line bg-paper px-2 py-1 font-mono text-sm" />
+                </div>
+                <div id="graph" class="graph-host"></div>
+                <div class="mt-4 flex flex-wrap items-center gap-2">
+                    <button id="regenerate" class="btn" type="button">Random</button>
+                    <button id="all-red" class="btn btn--ghost" type="button">All red</button>
+                    <button id="all-blue" class="btn btn--ghost" type="button">All blue</button>
+                    <span class="ml-1 stat">
+                        red <span id="red-count" class="text-ink">0</span> ·
+                        blue <span id="blue-count" class="text-ink">0</span>
+                    </span>
+                </div>
+            </section>
+
+            <section class="space-y-6">
+                <div class="panel">
+                    <h2 class="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+                        Canonical order
+                    </h2>
+                    <p id="order" class="mt-3 font-mono text-[15px] leading-relaxed"></p>
+                    <p id="status" class="mt-2 stat"></p>
+                </div>
+
+                <div class="panel">
+                    <h2 class="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+                        Nodes
+                    </h2>
+                    <table class="signatures mt-3">
+                        <thead>
+                            <tr>
+                                <th>Node</th>
+                                <th>Red degree</th>
+                                <th>Final index</th>
+                                <th>Resolved at pass</th>
+                            </tr>
+                        </thead>
+                        <tbody id="nodes-body"></tbody>
+                    </table>
+                </div>
+
+                <div class="panel">
+                    <h2 class="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+                        graph6
+                    </h2>
+                    <code id="graph6" class="mt-3 block break-all font-mono text-[13px] leading-relaxed"></code>
+                    <div class="mt-4 flex flex-wrap gap-2">
+                        <input id="graph6-input" type="text" placeholder="paste a graph6 string" class="min-w-0 flex-1 rounded border border-line bg-paper px-2 py-1.5 font-mono text-[12px]" />
+                        <button id="graph6-load" class="btn" type="button">Load</button>
+                    </div>
+                    <p id="graph6-error" class="mt-2 text-[11px] text-accent"></p>
+                </div>
+
+                <div class="panel">
+                    <div class="flex items-baseline justify-between gap-4">
+                        <h2 class="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+                            Signature
+                        </h2>
+                        <span id="sig-count" class="stat"></span>
+                    </div>
+                    <pre id="sig" class="sig mt-3"></pre>
+                </div>
+            </section>
+        </main>
+
+        <script type="module" src="/src/main.ts"></script>
+    </body>
+</html>
