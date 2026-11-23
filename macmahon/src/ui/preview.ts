@@ -5,7 +5,11 @@
  *                   puis jette le plateau une fois plein.
  * - mode "pruned" : elle ne pose que des pièces compatibles ; dès qu'une branche
  *                   est morte, elle retire la pièce et essaie la suivante.
- * - lockAllRed    : interdit la pièce toute rouge en dehors du quart haut-gauche.
+ *
+ * Options cumulables :
+ * - lockAllRed       : interdit la pièce toute rouge hors du quart haut-gauche ;
+ * - distinctRotations: n'essaie que les rotations réellement distinctes ;
+ * - mostConstrained  : choisit toujours la case vide au plus petit domaine (MRV).
  */
 import { PIECE_COUNT, PIECES, RED } from "../core/pieces.ts";
 import { edgesOf, pieceSvg } from "./render.ts";
@@ -17,7 +21,35 @@ const BORDER = 0;
 const QUARTER_ROWS = 2; // top half
 const QUARTER_COLS = 3; // left half
 
+// Batching: many search steps per repaint, so the machine computes fast
+// while the board is only redrawn a dozen times per second.
+const FRAME_MS = 80;
+const COMPUTE_MS = 10;
+const MAX_STEPS_PER_FRAME = 4000;
+const BRUTE_STEPS_PER_FRAME = 3;
+
 const ALL_RED_PIECE = PIECES.findIndex((tile) => tile.every((colour) => colour === RED));
+
+const ALL_ROTATIONS = [0, 1, 2, 3];
+
+/**
+ * Orientations réellement distinctes de chaque pièce :
+ * 1 pour les monochromes, 2 pour les pièces invariantes par 180°, 4 sinon.
+ */
+const DISTINCT_ROTATIONS: number[][] = PIECES.map((tile) => {
+    const seen = new Set<string>();
+    const kept: number[] = [];
+    let edges = [...tile];
+    for (let orientation = 0; orientation < 4; orientation++) {
+        const key = edges.join("");
+        if (!seen.has(key)) {
+            seen.add(key);
+            kept.push(orientation);
+        }
+        edges = [edges[3], edges[0], edges[1], edges[2]];
+    }
+    return kept;
+});
 
 export interface PreviewStats {
     placements: number;
@@ -25,25 +57,21 @@ export interface PreviewStats {
     solutions: number;
 }
 
-interface Frame {
-    idx: number;
-    options: number[];
-    next: number;
-}
-
 export class BoardPreview {
     private cells: Array<number | null> = new Array(N).fill(null);
     private used = 0;
-    private frames: Frame[] = [];
     private timer: number | undefined;
     private seed: number;
     private stats: PreviewStats = { placements: 0, deadEnds: 0, solutions: 0 };
+    private walker: Generator<void> | null = null;
 
     constructor(
         private readonly host: HTMLElement,
         private readonly mode: "brute" | "pruned",
         seed = 12345,
         private readonly lockAllRed = false,
+        private readonly distinctRotations = false,
+        private readonly mostConstrained = false,
     ) {
         this.seed = seed >>> 0;
         this.render();
@@ -51,7 +79,7 @@ export class BoardPreview {
 
     start(): void {
         if (this.timer !== undefined) return;
-        this.timer = window.setInterval(() => this.step(), 100);
+        this.timer = window.setInterval(() => this.frame(), FRAME_MS);
     }
 
     stop(): void {
@@ -63,7 +91,7 @@ export class BoardPreview {
     reset(): void {
         this.cells = new Array(N).fill(null);
         this.used = 0;
-        this.frames = [];
+        this.walker = null;
         this.stats = { placements: 0, deadEnds: 0, solutions: 0 };
         this.render();
     }
@@ -72,17 +100,43 @@ export class BoardPreview {
         return { ...this.stats };
     }
 
+    /* ---------------------------------------------------------------- */
+
     private random(): number {
         this.seed = (Math.imul(this.seed, 1664525) + 1013904223) >>> 0;
         return this.seed / 4294967296;
     }
 
-    private step(): void {
-        if (this.mode === "brute") this.bruteStep();
-        else this.prunedStep();
+    private frame(): void {
+        if (this.mode === "brute") {
+            // Cheap steps: keep the board readable instead of filling it instantly.
+            for (let i = 0; i < BRUTE_STEPS_PER_FRAME; i++) this.bruteStep();
+            this.render();
+            return;
+        }
+
+        if (!this.walker) this.walker = this.walk();
+        const deadline = performance.now() + COMPUTE_MS;
+        let steps = 0;
+
+        while (steps < MAX_STEPS_PER_FRAME) {
+            const result = this.walker.next();
+            steps++;
+            if (result.done) {
+                // The whole tree has been explored: start a fresh walk.
+                this.cells = new Array(N).fill(null);
+                this.used = 0;
+                this.walker = this.walk();
+                break;
+            }
+            if ((steps & 63) === 0 && performance.now() >= deadline) break;
+        }
+
         this.render();
     }
 
+    /* ---------------------------------------------------------------- */
+    /* Brute force: fill everything, check nothing                         */
     /* ---------------------------------------------------------------- */
 
     private bruteStep(): void {
@@ -105,108 +159,107 @@ export class BoardPreview {
     }
 
     /* ---------------------------------------------------------------- */
+    /* Pruned search: one placement (or removal) per tick                  */
+    /* ---------------------------------------------------------------- */
 
-    private prunedStep(): void {
-        if (this.frames.length === 0) {
-            this.frames.push(this.frameFor(0));
-            return;
-        }
-        const top = this.frames[this.frames.length - 1];
-
-        if (top.idx === N) {
+    private *walk(): Generator<void> {
+        const cell = this.pickCell();
+        if (cell < 0) {
             this.stats.solutions++;
             this.flash("is-solved");
-            this.backtrack();
+            yield;
             return;
         }
 
-        if (top.next >= top.options.length) {
-            this.backtrack();
-            return;
-        }
-
-        const code = top.options[top.next++];
-        this.used |= 1 << (code >> 2);
-        this.cells[top.idx] = code;
-        this.stats.placements++;
-
-        // The all-red tile must still have somewhere to go in the quarter.
-        // If not, this placement is already a dead end: cut the branch now
-        // instead of discovering it when the whole board is full.
-        if (this.lockAllRed && !this.allRedReachable()) {
-            this.used &= ~(1 << (code >> 2));
-            this.cells[top.idx] = null;
+        const options = this.optionsFor(cell);
+        if (options.length === 0) {
             this.stats.deadEnds++;
+            yield;
             return;
         }
 
-        this.frames.push(this.frameFor(top.idx + 1));
-    }
+        for (const code of options) {
+            this.place(cell, code);
+            this.stats.placements++;
+            yield;
 
-    /** Can the all-red tile still be placed in an empty cell of the quarter? */
-    private allRedReachable(): boolean {
-        if (this.used & (1 << ALL_RED_PIECE)) return true;
-        for (let idx = 0; idx < N; idx++) {
-            const r = (idx / W) | 0;
-            const c = idx % W;
-            if (r >= QUARTER_ROWS || c >= QUARTER_COLS) continue;
-            if (this.cells[idx] !== null) continue;
-            if (this.fits(idx, ALL_RED_PIECE)) return true;
+            // The all-red tile must still have somewhere to go in the quarter.
+            if (!this.lockAllRed || this.allRedReachable()) {
+                yield* this.walk();
+            }
+
+            this.unplace(cell);
+            this.stats.deadEnds++;
+            yield;
         }
-        return false;
     }
 
-    /** Necessary condition: an orientation of `piece` matching the known edges. */
-    private fits(idx: number, piece: number): boolean {
-        const r = (idx / W) | 0;
-        const c = idx % W;
-        const above = r > 0 ? this.cells[idx - W] : null;
-        const leftCell = c > 0 ? this.cells[idx - 1] : null;
-        const up = r === 0 ? BORDER : above === null ? -1 : edgesOf(above)[2];
-        const left = c === 0 ? BORDER : leftCell === null ? -1 : edgesOf(leftCell)[1];
-
-        for (let orientation = 0; orientation < 4; orientation++) {
-            const e = edgesOf(piece * 4 + orientation);
-            if (up >= 0 && e[0] !== up) continue;
-            if (left >= 0 && e[3] !== left) continue;
-            if (r === H - 1 && e[2] !== BORDER) continue;
-            if (c === W - 1 && e[1] !== BORDER) continue;
-            return true;
-        }
-        return false;
+    private place(cell: number, code: number): void {
+        this.used |= 1 << (code >> 2);
+        this.cells[cell] = code;
     }
 
-    private backtrack(): void {
-        const done = this.frames.pop();
-        if (!done) return;
-        if (done.idx > 0) {
-            const code = this.cells[done.idx - 1];
-            if (code !== null) {
-                this.used &= ~(1 << (code >> 2));
-                this.cells[done.idx - 1] = null;
-                this.stats.deadEnds++;
+    private unplace(cell: number): void {
+        const code = this.cells[cell];
+        if (code === null) return;
+        this.used &= ~(1 << (code >> 2));
+        this.cells[cell] = null;
+    }
+
+    /** First empty cell in reading order, or the one with the fewest options. */
+    private pickCell(): number {
+        let best = -1;
+        let bestCount = Number.POSITIVE_INFINITY;
+
+        for (let cell = 0; cell < N; cell++) {
+            if (this.cells[cell] !== null) continue;
+            if (!this.mostConstrained) return cell;
+            const count = this.optionsFor(cell).length;
+            if (count < bestCount) {
+                bestCount = count;
+                best = cell;
+                if (count === 0) break;
             }
         }
+
+        return this.mostConstrained ? best : -1;
     }
 
-    /** Toutes les poses légales pour la case idx, dans un ordre aléatoire. */
-    private frameFor(idx: number): Frame {
-        const options: number[] = [];
-        const r = (idx / W) | 0;
-        const c = idx % W;
-        const up = r > 0 ? edgesOf(this.cells[idx - W] as number)[2] : BORDER;
-        const left = c > 0 ? edgesOf(this.cells[idx - 1] as number)[1] : BORDER;
+    /** Known colours around a cell; -1 means “not placed yet”. Order N, E, S, W. */
+    private requirements(cell: number): [number, number, number, number] {
+        const r = (cell / W) | 0;
+        const c = cell % W;
+        const north = r > 0 ? this.cells[cell - W] : null;
+        const south = r < H - 1 ? this.cells[cell + W] : null;
+        const west = c > 0 ? this.cells[cell - 1] : null;
+        const east = c < W - 1 ? this.cells[cell + 1] : null;
+
+        return [
+            r === 0 ? BORDER : north === null ? -1 : edgesOf(north)[2],
+            c === W - 1 ? BORDER : east === null ? -1 : edgesOf(east)[3],
+            r === H - 1 ? BORDER : south === null ? -1 : edgesOf(south)[0],
+            c === 0 ? BORDER : west === null ? -1 : edgesOf(west)[1],
+        ];
+    }
+
+    /** Every legal placement for a cell, in random order. */
+    private optionsFor(cell: number): number[] {
+        const [needN, needE, needS, needW] = this.requirements(cell);
+        const r = (cell / W) | 0;
+        const c = cell % W;
         const inQuarter = r < QUARTER_ROWS && c < QUARTER_COLS;
+        const options: number[] = [];
 
         for (let piece = 0; piece < PIECE_COUNT; piece++) {
             if (this.used & (1 << piece)) continue;
             if (this.lockAllRed && piece === ALL_RED_PIECE && !inQuarter) continue;
-            for (let orientation = 0; orientation < 4; orientation++) {
+            const rotations = this.distinctRotations ? DISTINCT_ROTATIONS[piece] : ALL_ROTATIONS;
+            for (const orientation of rotations) {
                 const e = edgesOf(piece * 4 + orientation);
-                if (e[0] !== up) continue;
-                if (e[3] !== left) continue;
-                if (r === H - 1 && e[2] !== BORDER) continue;
-                if (c === W - 1 && e[1] !== BORDER) continue;
+                if (needN >= 0 && e[0] !== needN) continue;
+                if (needE >= 0 && e[1] !== needE) continue;
+                if (needS >= 0 && e[2] !== needS) continue;
+                if (needW >= 0 && e[3] !== needW) continue;
                 options.push(piece * 4 + orientation);
             }
         }
@@ -218,7 +271,34 @@ export class BoardPreview {
             options[j] = tmp;
         }
 
-        return { idx, options, next: 0 };
+        return options;
+    }
+
+    /** Can the all-red tile still be placed in an empty cell of the quarter? */
+    private allRedReachable(): boolean {
+        if (this.used & (1 << ALL_RED_PIECE)) return true;
+        for (let cell = 0; cell < N; cell++) {
+            const r = (cell / W) | 0;
+            const c = cell % W;
+            if (r >= QUARTER_ROWS || c >= QUARTER_COLS) continue;
+            if (this.cells[cell] !== null) continue;
+            if (this.fits(cell, ALL_RED_PIECE)) return true;
+        }
+        return false;
+    }
+
+    /** Necessary condition: an orientation of `piece` matching the known edges. */
+    private fits(cell: number, piece: number): boolean {
+        const [needN, needE, needS, needW] = this.requirements(cell);
+        for (let orientation = 0; orientation < 4; orientation++) {
+            const e = edgesOf(piece * 4 + orientation);
+            if (needN >= 0 && e[0] !== needN) continue;
+            if (needE >= 0 && e[1] !== needE) continue;
+            if (needS >= 0 && e[2] !== needS) continue;
+            if (needW >= 0 && e[3] !== needW) continue;
+            return true;
+        }
+        return false;
     }
 
     /* ---------------------------------------------------------------- */

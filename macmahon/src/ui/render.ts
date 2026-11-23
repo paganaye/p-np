@@ -47,3 +47,29 @@ export function boardSvgFromEdges(
     for (const e of edges) html += pieceSvg(e, strokeWidth);
     return `<div class="board__grid" style="grid-template-columns:repeat(${width},1fr)">${html}</div>`;
 }
+
+/** Pale blue used when white and blue are merged into “not red”. */
+export const PALE_BLUE = "#b9d2e2";
+
+/** A two-colour pattern: bits[i] === 1 means the edge is red. */
+export function patternSvg(bits: readonly number[], strokeWidth = 1.4): string {
+    let paths = "";
+    for (let i = 0; i < 4; i++) {
+        paths += `<path d="${TRIANGLES[i]}" fill="${bits[i] === 1 ? COLOR_HEX[0] : PALE_BLUE}"/>`;
+    }
+    return (
+        `<svg viewBox="0 0 100 100" role="img" aria-hidden="true" shape-rendering="crispEdges">` +
+        `<g stroke="${INK}" stroke-width="${strokeWidth}" stroke-linejoin="miter">${paths}</g>` +
+        `<rect x="0.7" y="0.7" width="98.6" height="98.6" fill="none" stroke="${INK}" stroke-width="1.4"/>` +
+        `</svg>`
+    );
+}
+
+export function boardPatternSvg(
+    cells: readonly (readonly number[])[],
+    width: number,
+    strokeWidth = 1.1,
+): string {
+    const html = cells.map((bits) => patternSvg(bits, strokeWidth)).join("");
+    return `<div class="board__grid" style="grid-template-columns:repeat(${width},1fr)">${html}</div>`;
+}

@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>MacMahon's squares — 24 tiles, 3 colours, 1.75 × 10³⁸ arrangements</title>
+        <title>MacMahon Squares — edge-matching puzzle in JavaScript</title>
         <meta
             name="description"
             content="MacMahon's squares explained: 24 edge-coloured tiles, one 6 × 4 rectangle, and 1.75 × 10^38 possible arrangements."
@@ -20,21 +20,24 @@
                 <h1
                     class="font-serif text-5xl leading-[0.98] tracking-[-0.025em] sm:text-6xl lg:text-7xl"
                 >
-                    Twenty-four squares,<br />
-                    three colours,<br />
-                    1.75 × 10³⁸ arrangements.
+                    MacMahon Squares
                 </h1>
+                <p class="mt-4 font-mono text-[13px] uppercase tracking-[0.14em] text-muted">
+                    Edge-matching puzzle · JavaScript
+                </p>
                 <p class="mt-7 max-w-xl text-lg leading-relaxed text-muted">
-                    Each piece is a square cut into four triangles. The task is to lay all of them
-                    into a 6 × 4 rectangle so that touching edges agree and the whole border is one
-                    colour. It sounds harmless. The arithmetic disagrees.
+                    Twenty-four squares, three colours, and 1.75 × 10³⁸ ways to arrange them.
+                    Each piece is a square cut into four triangles: the task is to lay them all
+                    into a 6 × 4 rectangle so that touching edges agree and the whole border is
+                    one colour. It sounds harmless. The arithmetic disagrees.
                 </p>
                 <nav class="mt-8 flex flex-wrap gap-x-6 gap-y-2 font-mono text-[13px]">
                     <a class="border-b border-line pb-0.5 hover:border-accent hover:text-accent" href="#puzzle">The puzzle</a>
                     <a class="border-b border-line pb-0.5 hover:border-accent hover:text-accent" href="#pieces">The pieces</a>
                     <a class="border-b border-line pb-0.5 hover:border-accent hover:text-accent" href="#number">The number</a>
                     <a class="border-b border-line pb-0.5 hover:border-accent hover:text-accent" href="#machine">The machine</a>
-                    <a class="border-b border-line pb-0.5 hover:border-accent hover:text-accent" href="#complexity">Complexity</a>
+                    <a class="border-b border-line pb-0.5 hover:border-accent hover:text-accent" href="#answer">The answer</a>
+                    <a class="border-b border-line pb-0.5 hover:border-accent hover:text-accent" href="#conclusion">How</a>
                 </nav>
             </div>
             <div>
@@ -169,9 +172,9 @@
                             pins down the twenty outer edges before the search starts.
                         </p>
                         <p class="mt-4">
-                            Even so, solutions are scarce. There are
-                            <strong>12 261</strong> ways to complete the 6 × 4 board — a figure
-                            produced by a 1964 computer run that took about forty hours.
+                            Even so, solutions are scarce — scarce enough that counting them all
+                            took a dedicated computer run. The exact number is at the end of this
+                            page.
                         </p>
                         <p class="mt-4">
                             Modern code does it in seconds, but the shape of the problem does not
@@ -186,11 +189,11 @@
                 <p class="eyebrow mb-5">05 — The counting machine</p>
                 <div class="max-w-3xl">
                     <h2 class="font-serif text-4xl leading-tight tracking-tight sm:text-5xl">
-                        Three machines, one board
+                        Five machines, one board
                     </h2>
                     <p class="mt-6 text-lg leading-relaxed text-[#322e27]">
-                        The same 6 × 4 board is filled by three different machines. The first checks
-                        everything; each of the next two removes one thing. In every card the small
+                        The same 6 × 4 board is filled by five different machines. The first checks
+                        everything; each of the next four removes one thing. In every card the small
                         board is the machine at work, slowed down to one tile every 100 ms so that
                         you can watch it.
                     </p>
@@ -285,36 +288,234 @@
                     </article>
                 </div>
 
+                <!-- Step 3 -->
+                <div class="mt-12">
+                    <h3 class="font-serif text-2xl tracking-tight">Step 3 — stop rotating identical tiles</h3>
+                    <p class="mt-2 max-w-3xl text-[15.5px] leading-relaxed text-muted">
+                        Three tiles look the same after a quarter turn —
+                        <span class="font-mono">RRRR</span>, <span class="font-mono">WWWW</span> and
+                        <span class="font-mono">BBBB</span> — so they have one useful orientation,
+                        not four. Three more are unchanged after a half turn
+                        (<span class="font-mono">RWRW</span>, <span class="font-mono">RBRB</span>,
+                        <span class="font-mono">WBWB</span>) and have two. The other eighteen really
+                        do have four.
+                    </p>
+                    <p class="mt-2 max-w-3xl text-[15.5px] leading-relaxed text-muted">
+                        Trying the four rotations of a monochrome tile builds the same subtree four
+                        times. Dropping the duplicates turns 4²⁴ into 4¹⁸ × 2³ = 2³⁹: the flat count
+                        is divided by 512, and the preview stops re-exploring boards it has already
+                        seen.
+                    </p>
+                    <article class="experiment mt-5 rounded border border-line bg-[#faf7f1]" data-kind="prune" data-lock="quarter" data-orientations="distinct">
+                        <div class="flex flex-wrap items-start justify-between gap-4 px-5 pt-5">
+                            <p class="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">+ distinct rotations only · ÷ 512</p>
+                            <button type="button" data-run class="rounded bg-ink px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-paper transition hover:bg-accent">Run the test</button>
+                        </div>
+                        <div class="mt-4 grid gap-5 px-5 pb-5 sm:grid-cols-[minmax(0,220px)_1fr]">
+                            <div class="preview" data-preview></div>
+                            <dl class="grid grid-cols-2 content-start gap-x-5 gap-y-4 sm:grid-cols-3">
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Placements tried</dt><dd class="mt-1 font-mono text-[15px]" data-out="placements">0</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Dead ends</dt><dd class="mt-1 font-mono text-[15px]" data-out="deadends">0</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Elapsed</dt><dd class="mt-1 font-mono text-[15px]" data-out="elapsed">0 s</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Solutions found</dt><dd class="mt-1 font-mono text-[15px]" data-out="sols">0</dd></div>
+                            </dl>
+                        </div>
+                    </article>
+                </div>
+
+                <!-- Step 4 -->
+                <div class="mt-12">
+                    <h3 class="font-serif text-2xl tracking-tight">Step 4 — fill the most constrained cell first</h3>
+                    <p class="mt-2 max-w-3xl text-[15.5px] leading-relaxed text-muted">
+                        So far the machine fills the board like a page of text: left to right, top
+                        to bottom. But the cells are not equally hard. A corner has two edges fixed
+                        by the red border, a side cell one, an interior cell none — the number of
+                        tiles that can still go there varies a lot.
+                    </p>
+                    <p class="mt-2 max-w-3xl text-[15.5px] leading-relaxed text-muted">
+                        At every step, look at all the empty cells, count how many placements each
+                        one still allows, and fill the one with the fewest options. The preview now
+                        builds the frame first and dives into the middle afterwards, and dead ends
+                        show up sooner.
+                    </p>
+                    <article class="experiment mt-5 rounded border border-line bg-[#faf7f1]" data-kind="prune" data-lock="quarter" data-orientations="distinct" data-order="mrv">
+                        <div class="flex flex-wrap items-start justify-between gap-4 px-5 pt-5">
+                            <p class="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">+ most constrained cell first (MRV)</p>
+                            <button type="button" data-run class="rounded bg-ink px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-paper transition hover:bg-accent">Run the test</button>
+                        </div>
+                        <div class="mt-4 grid gap-5 px-5 pb-5 sm:grid-cols-[minmax(0,220px)_1fr]">
+                            <div class="preview" data-preview></div>
+                            <dl class="grid grid-cols-2 content-start gap-x-5 gap-y-4 sm:grid-cols-3">
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Placements tried</dt><dd class="mt-1 font-mono text-[15px]" data-out="placements">0</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Dead ends</dt><dd class="mt-1 font-mono text-[15px]" data-out="deadends">0</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Elapsed</dt><dd class="mt-1 font-mono text-[15px]" data-out="elapsed">0 s</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Solutions found</dt><dd class="mt-1 font-mono text-[15px]" data-out="sols">0</dd></div>
+                            </dl>
+                        </div>
+                    </article>
+                </div>
+
                 <p class="mt-10 max-w-3xl text-lg leading-relaxed text-[#322e27]">
-                    Pinning the all-red tile in one quarter divides the brute force by four:
-                    1.4 × 10²⁹ years instead of 5.5 × 10²⁹. On a 38-digit number that is a rounding
-                    error. The step that changes the nature of the problem is the one before it —
-                    refusing a tile as soon as it does not fit.
+                    Four refinements: a quarter for the all-red tile, a factor 512 for the duplicate
+                    rotations, the most constrained cell first, and one bad edge to kill a whole
+                    branch. The first three are constant factors and a better order of exploration.
+                    The last is the only real algorithm — and it is still not enough.
                 </p>
+
+                <div class="mt-16 border-t border-line pt-10">
+                    <h3 class="font-serif text-3xl tracking-tight">And it is still hopeless</h3>
+                    <div class="mt-4 max-w-3xl text-lg leading-relaxed text-[#322e27]">
+                        <p>
+                            This is where the NP question stops being abstract. Checking a filled
+                            board is linear: a few dozen edge comparisons. But the number of boards
+                            to check grows exponentially with the number of tiles, and pruning
+                            improves the constant in front of that exponential — never the exponent.
+                            A machine a billion times faster buys a few more tiles, not an answer.
+                        </p>
+                        <p class="mt-4">
+                            So the way out is not a better search of the same space. It is a smaller
+                            space, solved first, then refined. Here is the trick.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-16 border-t border-line pt-10">
+                    <h3 class="font-serif text-3xl tracking-tight">Step 5 — solve a smaller problem first</h3>
+                    <div class="mt-4 max-w-3xl text-lg leading-relaxed text-[#322e27]">
+                        <p>
+                            Forget two of the three colours. Repaint every white and every blue
+                            triangle in the same pale blue, so that the board only knows
+                            <em>red</em> and <em>not red</em>. The twenty-four tiles stop being
+                            twenty-four: they collapse onto six patterns.
+                        </p>
+                    </div>
+                    <div id="projected-tiles" class="mt-6 grid max-w-xl grid-cols-3 gap-3 sm:grid-cols-6"></div>
+                    <div class="mt-8 max-w-3xl text-lg leading-relaxed text-[#322e27]">
+                        <p>
+                            The reduced puzzle is much easier — six patterns with fixed
+                            multiplicities (six copies of the no-red pattern, eight of the
+                            single-red one, and so on) instead of twenty-four distinct tiles.
+                            Copies of the same pattern are indistinguishable, so the machine tracks
+                            how many of each remain — not which piece is where — and it only tries
+                            the distinct rotations of each pattern: one for the two solid patterns,
+                            two for the opposite-red one, four for the rest. And
+                            as in step 2, the all-red pattern is confined to the top-left quarter:
+                            the four quarters are the same quarter seen four times. With that restriction
+                            it has <strong>twenty solutions</strong>, and it is small enough to solve
+                            right here. Each one is a skeleton: for every edge of the board, it says
+                            red, or not red. The machine below keeps every trick of the previous
+                            steps — and, like step 4, it always fills the most constrained cell
+                            first.
+                        </p>
+                    </div>
+                    <article class="experiment mt-8 rounded border border-line bg-[#faf7f1]" data-kind="patterns">
+                        <div class="flex flex-wrap items-start justify-between gap-4 px-5 pt-5">
+                            <p class="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Six patterns · all-red in the top-left quarter · most constrained cell first</p>
+                            <button type="button" data-run class="rounded bg-ink px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-paper transition hover:bg-accent">Run the test</button>
+                        </div>
+                        <div class="mt-4 grid gap-5 px-5 pb-5 sm:grid-cols-[minmax(0,220px)_1fr]">
+                            <div class="preview" data-preview></div>
+                            <dl class="grid grid-cols-2 content-start gap-x-5 gap-y-4 sm:grid-cols-3">
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Placements tried</dt><dd class="mt-1 font-mono text-[15px]" data-out="placements">0</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Dead ends</dt><dd class="mt-1 font-mono text-[15px]" data-out="deadends">0</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Elapsed</dt><dd class="mt-1 font-mono text-[15px]" data-out="elapsed">0 s</dd></div>
+                                <div><dt class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Solutions found</dt><dd class="mt-1 font-mono text-[15px]" data-out="solutions">0</dd></div>
+                            </dl>
+                        </div>
+                    </article>
+                    <div id="skeletons" class="mt-8 grid max-w-3xl grid-cols-3 gap-4 sm:grid-cols-5"></div>
+
+                    <div class="mt-16 border-t border-line pt-10">
+                        <h3 class="font-serif text-3xl tracking-tight">Step 6 — recolour the skeletons</h3>
+                        <div class="mt-4 max-w-3xl text-lg leading-relaxed text-[#322e27]">
+                            <p>
+                                Now put the real tiles back. A skeleton dictates which edges must be
+                                red, so at every cell only the tiles whose red edges line up can go
+                                there: a red edge can never receive a white or a blue triangle. The
+                                enormous search has become a filling exercise inside a fixed frame —
+                                twenty frames, a handful of tiles each.
+                            </p>
+                            <p class="mt-4">
+                                Recolour all twenty frames and you get
+                                <strong>26 656</strong> boards — every complete board whose all-red
+                                tile is in the top-left quarter. Four quarters, four times as many:
+                                the answer is <strong>106 624</strong>.
+                            </p>
+                        </div>
+                        <div class="mt-6">
+                            <button id="refine" type="button" class="rounded bg-ink px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-paper transition hover:bg-accent">Recolour the skeletons</button>
+                            <p id="refine-stats" class="mt-3 font-mono text-[12px] leading-relaxed text-muted">Run step 5 first, then press this.</p>
+                        </div>
+                        <div class="mt-8 border-t border-line pt-6">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <label for="solution-index" class="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Solution</label>
+                                <input id="solution-index" type="number" min="1" max="1" value="1" class="w-24 rounded border border-line bg-paper px-3 py-2 font-mono text-sm" />
+                                <span id="solution-label" class="font-mono text-[12px] text-muted">—</span>
+                            </div>
+                            <input id="solution-slider" type="range" min="1" max="1" value="1" class="mt-3 h-1 w-full max-w-xl accent-[#b83a2e]" />
+                            <div id="solution-board" class="board mt-4 hidden max-w-xs"></div>
+                        </div>
+                    </div>
+                </div>
             </section>
 
-            <!-- Complexity -->
-            <section id="complexity" class="mx-auto max-w-6xl border-t border-line px-6 py-16 md:py-24">
-                <p class="eyebrow mb-5">06 — Complexity</p>
+            <!-- The answer -->
+            <section id="answer" class="mx-auto max-w-6xl border-t border-line px-6 py-16 md:py-24">
+                <p class="eyebrow mb-5">06 — The answer</p>
                 <div class="max-w-3xl">
                     <h2 class="font-serif text-4xl leading-tight tracking-tight sm:text-5xl">
-                        Is it an NP problem?
+                        How many solutions are there?
+                    </h2>
+                </div>
+                <p class="mt-10 font-serif text-6xl tracking-tight sm:text-7xl">106 624</p>
+                <div class="mt-6 max-w-3xl text-lg leading-relaxed text-[#322e27]">
+                    <p>
+                        One hundred and six thousand, six hundred and twenty-four ways to lay the
+                        twenty-four tiles into the 6 × 4 board so that every touching edge agrees and
+                        the twenty outer edges are red.
+                    </p>
+                    <p class="mt-4">
+                        The page counts them in two passes: the twenty skeletons of step 5 give
+                        26 656 boards when the all-red tile is in the top-left quarter, and the four
+                        quarters are interchangeable — 4 × 26 656 = 106 624. Against the
+                        1.75 × 10³⁸ arrangements, that is about one solution in 1.6 × 10³³.
+                    </p>
+                </div>
+            </section>
+
+            <!-- Conclusion -->
+            <section id="conclusion" class="mx-auto max-w-6xl border-t border-line px-6 py-16 md:py-24">
+                <p class="eyebrow mb-5">07 — How</p>
+                <div class="max-w-3xl">
+                    <h2 class="font-serif text-4xl leading-tight tracking-tight sm:text-5xl">
+                        How 10³⁸ becomes seven seconds
                     </h2>
                     <p class="mt-6 text-lg leading-relaxed text-[#322e27]">
-                        <strong>In NP, yes.</strong> A filled board is checked in a single pass:
-                        38 interior edges plus 20 border edges. The certificate is 24 tiles long and
-                        verification is linear.
+                        Step 0 checks ten boards a second. At that rate the
+                        <span class="font-mono">1.75 × 10³⁸</span> arrangements would take
+                        <strong>5.5 × 10²⁹ years</strong> — about 4 × 10¹⁹ times the age of the
+                        universe. Steps 5 and 6 together take about <strong>seven seconds</strong>
+                        in a browser, on a laptop. That is a factor of 2.5 × 10³⁶.
                     </p>
                     <p class="mt-4 text-lg leading-relaxed text-[#322e27]">
-                        <strong>NP-complete as a family, yes.</strong> The general question — can a
-                        given set of edge-coloured tiles cover a given region? — is NP-complete
-                        (Demaine &amp; Demaine, 2007), and even the 1 × n case is NP-hard (Bosboom
-                        et al., 2017). MacMahon's squares are one instance of that family.
+                        Part of it is ordinary engineering. Steps 1 to 4 refuse a tile at the first
+                        bad edge, pin the all-red tile to one quarter, stop rotating identical
+                        tiles, and always fill the most constrained cell first. All of that is real
+                        — and all of it explores <em>the same space</em>, only faster.
                     </p>
                     <p class="mt-4 text-lg leading-relaxed text-[#322e27]">
-                        <strong>The 24-tile puzzle itself, no.</strong> A fixed instance has a fixed
-                        answer; it is a constant, not an asymptotic question. What is NP-complete is
-                        the problem parameterised by the number of tiles and colours.
+                        The rest is not engineering. Step 5 changes the question: it stops looking at
+                        the 1.75 × 10³⁸ arrangements of twenty-four <em>distinct</em> tiles,
+                        projects the board onto red / not-red, and solves that quotient — twenty
+                        skeletons, six seconds. Step 6 then lifts each skeleton back to real tiles.
+                        Because a skeleton fixes which edges are red, the enormous search collapses
+                        into a small filling problem: 26 656 boards, half a second.
+                    </p>
+                    <p class="mt-4 text-lg leading-relaxed text-[#322e27]">
+                        The lesson is not that the machine got fast. It is that almost none of the
+                        10³⁸ carries useful information. A solution is constrained almost entirely
+                        by its red skeleton; once that skeleton is fixed, only a handful of choices
+                        remain. Ask the small question first, and the big one answers itself.
                     </p>
                 </div>
             </section>

@@ -119,3 +119,22 @@
 .preview.is-solved {
     box-shadow: 0 0 0 3px #2f7a4f;
 }
+
+/* Two-colour projection tiles */
+#projected-tiles svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 2px;
+}
+
+/* Skeleton thumbnails (step 5) — small boards, quarter-size feel */
+#skeletons .board {
+    max-width: 128px;
+}
+
+#skeletons .caption {
+    margin-top: 4px;
+    font-size: 10px;
+    text-align: left;
+}
