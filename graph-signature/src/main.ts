@@ -1,4 +1,4 @@
-import { solve } from "./core/signature2.ts";
+import { SearchTooLargeError, compareNodes, partialSort, solve } from "./core/signature2.ts";
 import { fromGraph6, toGraph6 } from "./core/graph6.ts";
 import type { Block, PassLog, SearchResult, SortState } from "./core/signature2.ts";
 import { GraphView } from "./ui/graphView.ts";
@@ -9,6 +9,7 @@ const MAX_NODES = 18;
 let n = MAX_NODES;
 let adjacency: boolean[][] = [];
 let view: GraphView | null = null;
+let currentState: SortState | null = null;
 
 const host = document.getElementById("graph");
 const slider = document.getElementById("node-count") as HTMLInputElement | null;
@@ -117,6 +118,8 @@ function blockRow(block: Block): string {
     const range = start === end ? `#${start}` : `#${start}–#${end}`;
     const state =
         block.members.length === 1 ? "frozen" : block.twins === true ? "twins" : "tied";
+    const full = block.key ?? "";
+    const short = full === "" ? "—" : shortKey(full);
 
     return (
         `<div class="s2-row${block.fresh ? " s2-row--fresh" : ""}">` +
@@ -125,6 +128,7 @@ function blockRow(block: Block): string {
         `<span class="s2-members">${block.members
             .map(label)
             .join(" ")}</span>` +
+        `<span class="s2-key" title="${full}">${short}</span>` +
         `<span class="s2-state s2-state--${state}">${state}</span>` +
         `</div>`
     );
@@ -134,7 +138,7 @@ function blockRow(block: Block): string {
 function outcomeOf(pass: PassLog): string {
     if (pass.target === undefined) return "";
     if (pass.split === false) {
-        return `<p class="s2-pass-note">→ nothing moved at depth ${pass.depth}, going deeper</p>`;
+        return `<p class="s2-pass-note">→ nothing moved at ring ${pass.depth}, going one ring out</p>`;
     }
 
     const fresh = pass.blocks.filter((block) => block.fresh);
@@ -155,12 +159,12 @@ function outcomeOf(pass: PassLog): string {
     return `<div class="s2-outcome">${rows}<div class="s2-outcome-order">${order}</div></div>`;
 }
 
-/** Keys are trees; the panel only shows the head of the string. */
+/** Keys are ring summaries; the panel only shows the head of the string. */
 function shortKey(key: string): string {
     return key.length <= 22 ? key : `${key.slice(0, 21)}…`;
 }
 
-function renderSignature(result: SearchResult): void {
+function renderSignature(result: SearchResult, failure: string | null): void {
     const state = result.state;
     const last = state.log[state.log.length - 1];
     const groups = last.blocks.length;
@@ -182,25 +186,28 @@ function renderSignature(result: SearchResult): void {
         "status",
         `${state.log.length} ${state.log.length === 1 ? "pass" : "passes"} · ${groups} ${
             groups === 1 ? "group" : "groups"
-        } · ${frozen} frozen · ${twins} twins · ${tied} tied · depth ${state.maxDepth}`,
+        } · ${frozen} frozen · ${twins} twins · ${tied} tied · ${state.maxDepth} rings${
+            failure === null ? "" : " · gave up"
+        }`,
     );
 
     text("order", state.order.map(label).join(" "));
 
     text("graph6-before", toGraph6(adjacency));
-    text("graph6-after", toGraph6(reordered(adjacency, state.order)));
+    text("graph6-after", failure === null ? toGraph6(reordered(adjacency, state.order)) : "—");
 
     const note = document.getElementById("graph6-note");
     if (note) {
-        const canonical = ambiguous === 0 && !result.truncated;
+        const canonical = failure === null && ambiguous === 0;
         note.className = canonical ? "mt-2 stat" : "mt-2 text-[11.5px] text-accent";
-        note.textContent = canonical
-            ? "canonical — every group is a single vertex or a set of twins, and the pinned branches were compared, so this string is the same for every graph isomorphic to this one"
-            : result.truncated
-              ? "provisional — the branch budget ran out before every pinning was compared"
-              : `provisional — ${ambiguous} ${
-                    ambiguous === 1 ? "group still has" : "groups still have"
-                } an arbitrary order inside, so this string moves with the labelling`;
+        note.textContent =
+            failure !== null
+                ? `gave up — ${failure}. The sort is shown as far as it got, but the canonical string does not exist for this graph here.`
+                : canonical
+                  ? "canonical — every group is a single vertex or a set of twins, and the pinned branches were compared, so this string is the same for every graph isomorphic to this one"
+                  : `provisional — ${ambiguous} ${
+                        ambiguous === 1 ? "group still has" : "groups still have"
+                    } an arbitrary order inside, so this string moves with the labelling`;
     }
 
     const log = document.getElementById("s2-log");
@@ -209,16 +216,16 @@ function renderSignature(result: SearchResult): void {
             .map((pass) => {
                 const detail =
                     pass.pinned !== undefined
-                        ? `out of depth — pin ${label(pass.pinned)} out of #${pass.target}`
-                        : pass.split === false
-                          ? `depth ${pass.depth} — nothing separated`
-                          : pass.target === undefined
-                            ? `depth ${pass.depth} — ${pass.criterion}`
-                            : `depth ${pass.depth} — refine #${pass.target}${
+                        ? `out of rings — pin ${label(pass.pinned)} out of #${pass.target ?? "?"}`
+                        : pass.depth === 0
+                          ? "the red degree"
+                          : pass.split === false
+                            ? `rings ${pass.depth} — nothing separated`
+                            : `rings ${pass.depth} — refine #${pass.target}${
                                   pass.targetSize !== undefined && pass.targetSize > 1
-                                      ? `–#${pass.target + pass.targetSize - 1}`
+                                      ? `–#${(pass.target ?? 0) + pass.targetSize - 1}`
                                       : ""
-                              }, keyed by ${pass.criterion}`;
+                              }`;
 
                 return (
                     `<div class="s2-pass">` +
@@ -304,10 +311,101 @@ function renderEdges(state: SortState): void {
     text("edges", lines.join("\n"));
 }
 
+
+const compareA = document.getElementById("compare-a") as HTMLSelectElement | null;
+const compareB = document.getElementById("compare-b") as HTMLSelectElement | null;
+
+/** Fills the two selectors, defaulting to the first pair of a tied group. */
+function fillCompareOptions(state: SortState): void {
+    if (!compareA || !compareB) return;
+
+    const last = state.log[state.log.length - 1];
+    const tied = last.blocks.find((block) => block.members.length > 1 && block.twins !== true);
+    const pair = tied?.members.slice(0, 2) ?? [0, 1];
+
+    const options = Array.from(
+        { length: adjacency.length },
+        (_, index) => `<option value="${index}">${label(index)}</option>`,
+    ).join("");
+
+    const previousA = compareA.value;
+    const previousB = compareB.value;
+
+    compareA.innerHTML = options;
+    compareB.innerHTML = options;
+
+    compareA.value = previousA !== "" && Number(previousA) < adjacency.length ? previousA : String(pair[0] ?? 0);
+    compareB.value = previousB !== "" && Number(previousB) < adjacency.length ? previousB : String(pair[1] ?? 1);
+}
+
+/** Compares the two chosen nodes ring by ring and prints the trace. */
+function renderComparison(): void {
+    const host = document.getElementById("compare-trace");
+    if (!host || currentState === null || !compareA || !compareB) return;
+
+    const a = Number(compareA.value);
+    const b = Number(compareB.value);
+
+    if (a === b) {
+        host.innerHTML = `<p class="stat">Pick two different nodes.</p>`;
+        return;
+    }
+
+    const positions = new Array<number>(adjacency.length).fill(0);
+    for (const block of currentState.log[currentState.log.length - 1].blocks) {
+        for (const member of block.members) positions[member] = block.start;
+    }
+
+    const result = compareNodes(adjacency, positions, a, b, currentState.maxDepth);
+
+    const first = result.rings.find((ring) => !ring.equal);
+    const where =
+        first?.firstPosition === undefined
+            ? ""
+            : ` (position #${first.firstPosition.left} vs #${first.firstPosition.right})`;
+
+    const verdict = result.equal
+        ? `equal down to ring ${result.rings.length - 1} — nothing separates ${label(a)} from ${label(b)} at this depth`
+        : `differ at ring ${result.firstDifference}${where}`;
+
+    const rows = result.rings
+        .map(
+            (ring) =>
+                `<div class="cmp-row${ring.equal ? "" : " cmp-row--diff"}">` +
+                `<span class="cmp-ring">ring ${ring.ring}</span>` +
+                `<code>${label(a)} ${ring.left}</code>` +
+                `<code>${label(b)} ${ring.right}</code>` +
+                `<span class="cmp-mark">${ring.equal ? "=" : "≠"}</span>` +
+                `</div>`,
+        )
+        .join("");
+
+    host.innerHTML = `<p class="cmp-verdict">${verdict}</p>${rows}`;
+}
+
 function refresh(): void {
     view?.render(adjacency);
     remember();
-    renderSignature(solve(adjacency));
+
+    try {
+        const result = solve(adjacency);
+        currentState = result.state;
+        renderSignature(result, null);
+    } catch (error) {
+        const message =
+            error instanceof SearchTooLargeError
+                ? error.message
+                : error instanceof Error
+                  ? error.message
+                  : "the search gave up";
+        currentState = partialSort(adjacency);
+        renderSignature({ state: currentState, key: "", branches: 0 }, message);
+    }
+
+    if (currentState !== null) {
+        fillCompareOptions(currentState);
+        renderComparison();
+    }
 }
 
 function toggle(i: number, j: number): void {
@@ -364,6 +462,9 @@ if (host) {
         adjacency = uniformColouring(n, false);
         refresh();
     });
+    compareA?.addEventListener("change", () => renderComparison());
+    compareB?.addEventListener("change", () => renderComparison());
+
     document.getElementById("shuffle-labels")?.addEventListener("click", () => {
         adjacency = relabelled(adjacency);
         refresh();

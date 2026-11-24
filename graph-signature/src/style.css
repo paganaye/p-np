@@ -112,13 +112,22 @@
 
 .s2-row {
     display: grid;
-    grid-template-columns: 76px 72px minmax(0, 1fr) 64px;
+    grid-template-columns: 76px 72px minmax(0, 1fr) minmax(0, 240px) 64px;
     gap: 12px;
     align-items: baseline;
     padding: 5px 9px;
     border: 1px solid var(--color-line);
     border-radius: 4px;
     background: var(--color-paper);
+}
+
+.s2-key {
+    color: var(--color-muted);
+    font-size: 10.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: help;
 }
 
 .s2-rank {
@@ -216,4 +225,53 @@
     line-height: 1.65;
     white-space: pre;
     color: var(--color-ink);
+}
+
+.cmp {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+}
+
+.cmp-verdict {
+    margin: 0 0 8px;
+    color: var(--color-ink);
+}
+
+.cmp-row {
+    display: grid;
+    grid-template-columns: 62px minmax(0, 1fr) minmax(0, 1fr) 16px;
+    gap: 10px;
+    align-items: baseline;
+    padding: 4px 8px;
+    border: 1px solid var(--color-line);
+    border-radius: 4px;
+    background: var(--color-paper);
+}
+
+.cmp-row--diff {
+    border-color: var(--color-accent);
+}
+
+.cmp-ring {
+    color: var(--color-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.cmp-row code {
+    overflow-wrap: anywhere;
+    color: var(--color-ink);
+}
+
+.cmp-mark {
+    color: var(--color-muted);
+    text-align: right;
+}
+
+.cmp-row--diff .cmp-mark {
+    color: var(--color-accent);
 }

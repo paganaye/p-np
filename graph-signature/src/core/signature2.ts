@@ -9,29 +9,26 @@ import { toGraph6 } from "./graph6.ts";
  * group's identity; a pass refines a group by its position, never by its
  * members' labels.
  *
- * The key of a vertex is its **walk tree**, in which every node also carries the
- * position of its group:
+ * The key of a vertex is its **ball**: everything at distance at most `d`, with
+ * the edges inside. Its size is bounded by the graph — at most `n` vertices —
+ * and it stops changing once `d` reaches the diameter, so the depth is a
+ * property of the graph, not a setting.
  *
- * - the ring of neighbours gives the degree, two rings give the neighbourhood of
- *   the neighbourhood, and so on — that is what tells a triangle from a square,
- *   which any neighbour *counting* calls identical;
- * - a branch that comes back to one of its own ancestors is written `^k`, `k`
- *   steps up — that is what records the length of a cycle;
- * - the position of each node is what lets a pinned vertex matter to its
- *   neighbours, instead of being one more indistinguishable leaf.
+ * The key is not the whole ball (deciding whether two balls are isomorphic is a
+ * graph isomorphism problem of its own); it is a label-free shadow of it: for
+ * every distance ring, how many vertices, their degrees, how many edges inside
+ * the ring, and how many back to the previous one. That is already enough to
+ * tell a triangle from a square at distance 1 — the triangle's ring has an edge
+ * inside it, the square's does not.
  *
- * Pass `p` looks `p` rings deep. When that separates nothing, the pass **pins**
- * the first member of the group instead: the vertex becomes a group of one, so
- * the next pass sees it as a position of its own and its neighbours can be told
- * apart.
+ * When the diameter is exhausted and a group still refuses to split, the search
+ * **pins** it: each member in turn leaves the group, the whole sort is run
+ * again, and the branch giving the smallest graph6 wins. A pin is never a
+ * choice, only a comparison.
  *
- * Two things keep it finite:
- *
- * - **twins** — vertices a swap can exchange without touching any other edge —
- *   are never separable, and their order is harmless: the matrix does not change.
- *   Such a group is marked and skipped.
- * - the tree grows like `degree^depth`, so the depth is capped from the largest
- *   degree. Past the cap the sort stops and the page says so.
+ * Two groups are never refined: a group of one (frozen), and a group whose
+ * members are pairwise **twins** — a swap exchanges them without touching any
+ * other edge, so their order cannot change the matrix.
  */
 
 export interface Block {
@@ -45,13 +42,13 @@ export interface Block {
     fresh?: boolean;
     /** True when every pair of members is interchangeable: their order is free. */
     twins?: boolean;
-    /** The key that produced this group: its walk tree, as a string. */
+    /** The key that produced this group: the shadow of its members' ball. */
     key?: string;
 }
 
 export interface PassLog {
     pass: number;
-    /** How many rings the key looked at. */
+    /** How far the key looked. */
     depth: number;
     /** What this pass did, spelled out for the panel. */
     criterion: string;
@@ -72,15 +69,9 @@ export interface SortState {
     order: number[];
     /** One entry per pass run so far. */
     log: PassLog[];
-    /** Deepest key the budget allows. */
+    /** Furthest distance there is anything to see: the graph's diameter. */
     maxDepth: number;
 }
-
-/** Walk-tree nodes we are willing to build per vertex, which caps the depth. */
-const KEY_BUDGET = 8000;
-
-/** Hard ceiling on the depth. */
-const DEPTH_CEILING = 8;
 
 function neighboursOf(adjacency: readonly (readonly boolean[])[]): number[][] {
     const n = adjacency.length;
@@ -94,34 +85,196 @@ function neighboursOf(adjacency: readonly (readonly boolean[])[]): number[][] {
 }
 
 /**
- * Canonical description of the depth-`depth` walk tree rooted at `vertex`.
- *
- * Every node is written `p<position>` followed, when it has children, by them
- * between parentheses. `path` holds the vertices from the root down to the
- * current one, so a branch landing on an ancestor is written `^<steps>@<position>`.
+ * Distances from `root`, up to `depth`; `-1` for anything out of reach.
  */
-export function treeKey(
+function distancesFrom(
+    neighbours: readonly (readonly number[])[],
+    root: number,
+    depth: number,
+): number[] {
+    const distance = new Array<number>(neighbours.length).fill(-1);
+    distance[root] = 0;
+
+    const queue: number[] = [root];
+    for (let head = 0; head < queue.length; head++) {
+        const current = queue[head];
+        if (distance[current] >= depth) continue;
+        for (const next of neighbours[current]) {
+            if (distance[next] !== -1) continue;
+            distance[next] = distance[current] + 1;
+            queue.push(next);
+        }
+    }
+
+    return distance;
+}
+
+export interface RingData {
+    /** Sorted group positions of the ring's vertices — the degree is implied. */
+    positions: number[];
+    /** Edges with both ends in this ring. */
+    inside: number;
+    /** Edges from this ring back to the previous one. */
+    back: number;
+}
+
+/**
+ * The ball of radius `depth` around `vertex`, cut into rings — ring 0 (the
+ * vertex itself) excluded, since its only content is the degree, which the key
+ * carries separately.
+ *
+ * A ring is described by the **sorted positions** of its vertices: a group holds
+ * a single degree, so the position of a vertex already says how many neighbours
+ * it has. Two counts come on top: edges inside the ring, and edges back to the
+ * previous one.
+ */
+export function ballRings(
     neighbours: readonly (readonly number[])[],
     positions: readonly number[],
     vertex: number,
     depth: number,
-    path: number[] = [],
-): string {
-    const label = `p${positions[vertex]}`;
-    if (depth === 0) return label;
+): RingData[] {
+    const distance = distancesFrom(neighbours, vertex, depth);
+    const n = neighbours.length;
 
-    path.push(vertex);
-    const children: string[] = [];
+    const rings: RingData[] = [];
+    for (let ring = 1; ring <= depth; ring++) {
+        const members: number[] = [];
+        for (let candidate = 0; candidate < n; candidate++) {
+            if (distance[candidate] === ring) members.push(candidate);
+        }
+        if (members.length === 0) break;
 
-    for (const next of neighbours[vertex]) {
-        const seen = path.lastIndexOf(next);
-        if (seen >= 0) children.push(`^${path.length - seen}@${positions[next]}`);
-        else children.push(treeKey(neighbours, positions, next, depth - 1, path));
+        const groups = members.map((member) => positions[member]);
+        groups.sort((a, b) => a - b);
+
+        let inside = 0;
+        for (let i = 0; i < members.length; i++) {
+            for (let j = i + 1; j < members.length; j++) {
+                if (neighbours[members[i]].includes(members[j])) inside += 1;
+            }
+        }
+
+        let back = 0;
+        for (const member of members) {
+            for (const other of neighbours[member]) {
+                if (distance[other] === ring - 1) back += 1;
+            }
+        }
+
+        rings.push({ positions: groups, inside, back });
     }
 
-    path.pop();
-    children.sort();
-    return `${label}(${children.join("")})`;
+    return rings;
+}
+
+function ringText(ring: RingData): string {
+    return `${ring.positions.join(".")}|${ring.inside}|${ring.back}`;
+}
+
+/** The degree, then one section per ring: the whole ball as a key. */
+export function ballKey(
+    neighbours: readonly (readonly number[])[],
+    positions: readonly number[],
+    vertex: number,
+    depth: number,
+): string {
+    const degree = neighbours[vertex].length;
+    const rings = ballRings(neighbours, positions, vertex, depth);
+    return [String(degree), ...rings.map(ringText)].join(";");
+}
+
+export interface CompareRing {
+    ring: number;
+    left: string;
+    right: string;
+    equal: boolean;
+    /** First position where the two rings disagree, when they do. */
+    firstPosition?: { left: number; right: number };
+}
+
+export interface CompareResult {
+    equal: boolean;
+    /** First ring where the two balls differ, or null when they never do. */
+    firstDifference: number | null;
+    rings: CompareRing[];
+}
+
+/**
+ * Compares two vertices level by level: the degree first, then ring by ring.
+ * Because the positions are sorted, the first position where two rings disagree
+ * is also the earliest group — the one settled first.
+ */
+export function compareNodes(
+    adjacency: readonly (readonly boolean[])[],
+    positions: readonly number[],
+    a: number,
+    b: number,
+    depth: number,
+): CompareResult {
+    const neighbours = neighboursOf(adjacency);
+
+    const rings: CompareRing[] = [];
+    let firstDifference: number | null = null;
+
+    const degreeA = neighbours[a].length;
+    const degreeB = neighbours[b].length;
+    rings.push({
+        ring: 0,
+        left: String(degreeA),
+        right: String(degreeB),
+        equal: degreeA === degreeB,
+    });
+    if (degreeA !== degreeB) firstDifference = 0;
+
+    const left = ballRings(neighbours, positions, a, depth);
+    const right = ballRings(neighbours, positions, b, depth);
+
+    const count = Math.max(left.length, right.length);
+    for (let index = 0; index < count; index++) {
+        const ring = index + 1;
+        const l = left[index];
+        const r = right[index];
+
+        if (l === undefined || r === undefined) {
+            rings.push({
+                ring,
+                left: l === undefined ? "—" : ringText(l),
+                right: r === undefined ? "—" : ringText(r),
+                equal: false,
+            });
+            if (firstDifference === null) firstDifference = ring;
+            continue;
+        }
+
+        let disagreement: { left: number; right: number } | undefined;
+        const length = Math.max(l.positions.length, r.positions.length);
+        for (let position = 0; position < length; position++) {
+            const lp = l.positions[position];
+            const rp = r.positions[position];
+            if (lp !== rp) {
+                if (lp !== undefined && rp !== undefined) disagreement = { left: lp, right: rp };
+                break;
+            }
+        }
+
+        const equal =
+            disagreement === undefined &&
+            l.positions.length === r.positions.length &&
+            l.inside === r.inside &&
+            l.back === r.back;
+
+        rings.push({
+            ring,
+            left: ringText(l),
+            right: ringText(r),
+            equal,
+            firstPosition: disagreement,
+        });
+        if (!equal && firstDifference === null) firstDifference = ring;
+    }
+
+    return { equal: firstDifference === null, firstDifference, rings };
 }
 
 /** Two vertices are interchangeable when swapping them changes no other edge. */
@@ -137,7 +290,10 @@ export function areTwins(
     return true;
 }
 
-function allTwins(adjacency: readonly (readonly boolean[])[], members: readonly number[]): boolean {
+function allTwins(
+    adjacency: readonly (readonly boolean[])[],
+    members: readonly number[],
+): boolean {
     for (let i = 0; i < members.length; i++) {
         for (let j = i + 1; j < members.length; j++) {
             if (!areTwins(adjacency, members[i], members[j])) return false;
@@ -146,18 +302,21 @@ function allTwins(adjacency: readonly (readonly boolean[])[], members: readonly 
     return true;
 }
 
-/** Deepest key the walk-tree budget allows for this graph. */
-export function depthBudget(adjacency: readonly (readonly boolean[])[]): number {
-    let largest = 0;
-    for (const row of adjacency) {
-        let degree = 0;
-        for (const red of row) if (red) degree += 1;
-        if (degree > largest) largest = degree;
+/**
+ * The furthest useful depth: the largest finite distance in the graph. Beyond
+ * it a ball is the whole connected component and cannot grow, so the depth is a
+ * property of the graph rather than a setting.
+ */
+export function diameter(adjacency: readonly (readonly boolean[])[]): number {
+    const neighbours = neighboursOf(adjacency);
+    let furthest = 0;
+
+    for (let vertex = 0; vertex < adjacency.length; vertex++) {
+        const distance = distancesFrom(neighbours, vertex, adjacency.length);
+        for (const value of distance) if (value > furthest) furthest = value;
     }
 
-    const branching = Math.max(2, largest);
-    const affordable = Math.floor(Math.log(KEY_BUDGET) / Math.log(branching));
-    return Math.max(1, Math.min(DEPTH_CEILING, affordable));
+    return Math.max(1, furthest);
 }
 
 /** Highest key first: at depth 1 that is the highest degree first. */
@@ -184,11 +343,11 @@ function groupByKey(
 export function firstPass(adjacency: readonly (readonly boolean[])[]): SortState {
     const n = adjacency.length;
     const neighbours = neighboursOf(adjacency);
-    const nothing = new Array<number>(n).fill(0);
 
     const keys = new Map<number, string>();
+    const nothing = new Array<number>(n).fill(0);
     for (let vertex = 0; vertex < n; vertex++) {
-        keys.set(vertex, treeKey(neighbours, nothing, vertex, 1));
+        keys.set(vertex, ballKey(neighbours, nothing, vertex, 0));
     }
 
     const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => {
@@ -220,18 +379,15 @@ export function firstPass(adjacency: readonly (readonly boolean[])[]): SortState
 
     return {
         order,
-        maxDepth: depthBudget(adjacency),
-        log: [{ pass: 1, depth: 1, criterion: "the red degree", blocks }],
+        maxDepth: diameter(adjacency),
+        log: [{ pass: 1, depth: 0, criterion: "the red degree", blocks }],
     };
 }
 
 /**
- * One advance on the first group that is neither a singleton nor a twin set.
- *
- * The key is the walk tree at a depth one ring deeper than the previous pass,
- * with every node carrying its group's position. If that separates nothing, the
- * pass pins the group's first member instead: from then on that vertex is a
- * position of its own, and the next pass can tell its neighbours from the rest.
+ * One advance on the first group that is neither a singleton nor a twin set,
+ * keyed by the ball one ring further out. Once the diameter is reached the
+ * state is returned untouched — the search above then pins a member.
  */
 export function advance(
     state: SortState,
@@ -243,26 +399,22 @@ export function advance(
     );
     if (target === undefined) return state;
 
-    // One ring deeper than the previous pass. When the depth budget is spent,
-    // stop: the search above takes over and pins a vertex.
     const depth = previous.depth + 1;
     if (depth > state.maxDepth) return state;
 
-    const n = adjacency.length;
-    const positions = new Array<number>(n).fill(0);
+    const neighbours = neighboursOf(adjacency);
+    const positions = new Array<number>(adjacency.length).fill(0);
     for (const block of previous.blocks) {
         for (const vertex of block.members) positions[vertex] = block.start;
     }
 
-    const neighbours = neighboursOf(adjacency);
     const keys = new Map<number, string>();
     for (const vertex of target.members) {
-        keys.set(vertex, treeKey(neighbours, positions, vertex, depth));
+        keys.set(vertex, ballKey(neighbours, positions, vertex, depth));
     }
 
     const byKey = groupByKey(keys, target.members);
 
-    // Nothing at this depth: record the miss so the next pass can go deeper.
     if (byKey.length === 1) {
         return {
             order: state.order,
@@ -272,7 +424,7 @@ export function advance(
                 {
                     pass: previous.pass + 1,
                     depth,
-                    criterion: `walk trees ${depth} rings deep — nothing separated`,
+                    criterion: `rings ${depth} — nothing separated`,
                     target: target.start,
                     targetSize: target.members.length,
                     split: false,
@@ -312,7 +464,7 @@ export function advance(
             {
                 pass: previous.pass + 1,
                 depth,
-                criterion: `walk trees ${depth} rings deep`,
+                criterion: `rings ${depth}`,
                 target: target.start,
                 targetSize: target.members.length,
                 split: true,
@@ -367,7 +519,7 @@ export function pinVertex(
             {
                 pass: previous.pass + 1,
                 depth: 0,
-                criterion: "out of depth — this vertex, pinned",
+                criterion: "out of rings",
                 target: target.start,
                 targetSize: target.members.length,
                 pinned: vertex,
@@ -383,12 +535,23 @@ export interface SearchResult {
     state: SortState;
     /** The canonical graph6 of that branch. */
     key: string;
-    /** True when the branch budget ran out before the search finished. */
-    truncated: boolean;
+    /** How many branches the search had to visit — the cost measure. */
+    branches: number;
+}
+
+/**
+ * Thrown when the search explores more branches than it is willing to. There is
+ * no silent truncation: a graph that is too hard says so.
+ */
+export class SearchTooLargeError extends Error {
+    constructor(readonly branches: number) {
+        super(`the search explored ${branches} branches without settling`);
+        this.name = "SearchTooLargeError";
+    }
 }
 
 /** How many branches the search may explore before it gives up. */
-const BRANCH_BUDGET = 400;
+const BRANCH_LIMIT = 1000;
 
 function refine(
     state: SortState,
@@ -422,8 +585,12 @@ function orderedString(
 function search(
     state: SortState,
     adjacency: readonly (readonly boolean[])[],
-    budget: { left: number },
-): SearchResult {
+    budget: { left: number; used: number },
+): { state: SortState; key: string } {
+    if (budget.left <= 0) throw new SearchTooLargeError(BRANCH_LIMIT);
+    budget.left -= 1;
+    budget.used += 1;
+
     const refined = refine(state, adjacency);
     const last = refined.log[refined.log.length - 1];
     const target = last.blocks.find(
@@ -432,44 +599,33 @@ function search(
 
     // Nothing left to refine: this branch is a leaf, its string is a candidate.
     if (target === undefined) {
-        return {
-            state: refined,
-            key: orderedString(adjacency, refined.order),
-            truncated: budget.left <= 0,
-        };
+        return { state: refined, key: orderedString(adjacency, refined.order) };
     }
 
-    // The group resists every depth: try each member, keep the smallest string.
-    let best: SearchResult | null = null;
-    let truncated = false;
-
+    // The group resists every distance: try each member, keep the smallest.
+    let best: { state: SortState; key: string } | null = null;
     for (const vertex of target.members) {
-        if (budget.left <= 0) {
-            truncated = true;
-            break;
-        }
-        budget.left -= 1;
-
         const candidate = search(pinVertex(refined, adjacency, vertex), adjacency, budget);
-        truncated = truncated || candidate.truncated;
         if (best === null || candidate.key < best.key) best = candidate;
     }
 
-    if (best === null) {
-        return {
-            state: refined,
-            key: orderedString(adjacency, refined.order),
-            truncated: true,
-        };
-    }
-
-    return { state: best.state, key: best.key, truncated };
+    return best as SearchResult;
 }
 
 /**
- * The signature: refine as far as the keys allow, then branch on every group
+ * The signature: refine as far as the balls allow, then branch on every group
  * that refuses to split, and keep the smallest graph6 over all the branches.
+ *
+ * Throws `SearchTooLargeError` when the branching gets out of hand. Refusing
+ * loudly is better than freezing the page.
  */
 export function solve(adjacency: readonly (readonly boolean[])[]): SearchResult {
-    return search(firstPass(adjacency), adjacency, { left: BRANCH_BUDGET });
+    const budget = { left: BRANCH_LIMIT, used: 0 };
+    const result = search(firstPass(adjacency), adjacency, budget);
+    return { ...result, branches: budget.used };
+}
+
+/** The sort without any branching — what the page shows when the search gives up. */
+export function partialSort(adjacency: readonly (readonly boolean[])[]): SortState {
+    return refine(firstPass(adjacency), adjacency);
 }

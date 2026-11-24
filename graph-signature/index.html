@@ -100,6 +100,18 @@
                     <p id="edge-count" class="mt-3 stat"></p>
                     <pre id="edges" class="s2-edges mt-2"></pre>
                 </div>
+
+                <div class="panel">
+                    <h2 class="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+                        Compare two nodes
+                    </h2>
+                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                        <select id="compare-a" class="rounded border border-line bg-paper px-2 py-1 font-mono text-sm"></select>
+                        <span class="stat">vs</span>
+                        <select id="compare-b" class="rounded border border-line bg-paper px-2 py-1 font-mono text-sm"></select>
+                    </div>
+                    <div id="compare-trace" class="cmp mt-4"></div>
+                </div>
             </section>
         </main>
 
@@ -109,22 +121,12 @@
                     Passes
                 </h2>
                 <p class="mt-3 max-w-3xl text-[13.5px] leading-relaxed text-muted">
-                    The signature is a sort, and its key is a <strong>walk tree</strong>: from a
-                    vertex, follow every path and mark a branch that comes back to one of its own
-                    ancestors, with the distance it took. Counting neighbours cannot tell a triangle
-                    from a square, but at depth 3 the triangle's tree already shows a
-                    <code>^3</code> return and the square's does not — that is the whole point.
-                    Pass <em>p</em> looks <em>p</em> rings deep, and every node of the tree carries
-                    the position of its group. When the keys separate nothing, the sort goes one
-                    ring deeper — that is how a square and a triangle, both 2-regular, are finally
-                    told apart. When the depth is spent and a group still refuses to split, the
-                    search pins each of its members in turn and keeps the smallest graph6, so the
-                    result is a comparison, not a choice. The <code>A…R</code> labels never enter a
-                    key; they only make the log readable. A group of one vertex is
-                    <strong>frozen</strong>, a set of interchangeable vertices is
-                    <strong>twins</strong> (their order cannot change the matrix), the rest is
-                    <strong>tied</strong>. <em>Shuffle labels</em> renumbers the vertices without
-                    touching a single edge — the input graph6 changes, the canonical one must not.
+                    Pass 1 sorts by degree. Pass 2 adds the first ring of neighbours, pass 3 one more.
+                    A group of one is <strong>frozen</strong>; a group whose members are
+                    interchangeable is <strong>twins</strong> (their order cannot change the matrix);
+                    the rest is <strong>tied</strong>. When the rings stop separating a group, each
+                    member is tried in turn and the smallest graph6 wins — a comparison, not a choice.
+                    The <code>A…R</code> labels never enter a key; they only make the log readable.
                 </p>
                 <div id="s2-log" class="s2-log mt-5"></div>
             </div>

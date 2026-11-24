@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { advance, areTwins, depthBudget, firstPass, solve, treeKey } from "./signature2.ts";
+import {
+    advance,
+    areTwins,
+    ballKey,
+    compareNodes,
+    diameter,
+    firstPass,
+    SearchTooLargeError,
+    solve,
+} from "./signature2.ts";
 import type { SortState } from "./signature2.ts";
 
 type Matrix = boolean[][];
@@ -130,36 +139,46 @@ function neighboursOf(matrix: Matrix): number[][] {
 
 // ------------------------------------------------------------------ tests ---
 
-describe("the walk tree", () => {
+describe("the ball", () => {
     const noPositions = (n: number) => new Array<number>(n).fill(0);
 
-    it("separates a triangle from a square at depth 3", () => {
+    it("is the degree at radius 0", () => {
+        const p5 = neighboursOf(path(5));
+        expect(ballKey(p5, noPositions(5), 0, 0)).toBe("1");
+        expect(ballKey(p5, noPositions(5), 2, 0)).toBe("2");
+    });
+
+    it("separates a triangle from a square at radius 1", () => {
         const triangle = neighboursOf(cycle(3));
         const square = neighboursOf(cycle(4));
 
-        expect(treeKey(triangle, noPositions(3), 0, 2)).toBe(treeKey(square, noPositions(4), 0, 2));
-        expect(treeKey(triangle, noPositions(3), 0, 3)).not.toBe(
-            treeKey(square, noPositions(4), 0, 3),
-        );
+        // The triangle's first ring has an edge inside it, the square's does not.
+        expect(ballKey(triangle, noPositions(3), 0, 1)).toBe("2;0.0|1|2");
+        expect(ballKey(square, noPositions(4), 0, 1)).toBe("2;0.0|0|2");
     });
 
-    it("marks the return with the distance it took", () => {
-        const triangle = neighboursOf(cycle(3));
-        expect(treeKey(triangle, noPositions(3), 0, 3)).toContain("^3@");
-        expect(treeKey(triangle, noPositions(3), 0, 2)).not.toContain("^3@");
-    });
-
-    it("is the degree at depth 1", () => {
-        const p5 = neighboursOf(path(5));
-        expect(treeKey(p5, noPositions(5), 0, 1)).toBe("p0(p0)");
-        expect(treeKey(p5, noPositions(5), 2, 1)).toBe("p0(p0p0)");
-    });
-
-    it("carries the position of each node", () => {
+    it("carries the group positions, so a pin can matter", () => {
         const p5 = neighboursOf(path(5));
         const positions = [0, 1, 1, 1, 0];
-        expect(treeKey(p5, positions, 1, 1)).toContain("p0");
-        expect(treeKey(p5, positions, 1, 1)).toContain("p1");
+        expect(ballKey(p5, positions, 1, 1)).toContain("0.1");
+        expect(ballKey(p5, positions, 2, 1)).toContain("1.1");
+    });
+
+    it("grows with the radius, and stops at the diameter", () => {
+        const square = neighboursOf(cycle(4));
+        expect(ballKey(square, noPositions(4), 0, 2)).toBe(ballKey(square, noPositions(4), 0, 3));
+    });
+});
+
+describe("the diameter", () => {
+    it("is the furthest finite distance", () => {
+        expect(diameter(complete(5))).toBe(1);
+        expect(diameter(cycle(8))).toBe(4);
+        expect(diameter(path(5))).toBe(4);
+    });
+
+    it("is never below one, so a pass always has somewhere to look", () => {
+        expect(diameter(emptyGraph(6))).toBe(1);
     });
 });
 
@@ -189,31 +208,20 @@ describe("the sort", () => {
         expect(state.log[0].blocks.map((block) => block.degree)).toEqual([2, 1]);
     });
 
-    it("splits P5's middle group at depth 2", () => {
+    it("splits P5's middle group at the first ring", () => {
         const matrix = path(5);
         const pass = advance(firstPass(matrix), matrix).log[1];
 
         expect(pass.target).toBe(1);
         expect(pass.pinned).toBeUndefined();
-        expect(pass.blocks.map((block) => block.members)).toEqual([[2], [1, 3], [0, 4]]);
-    });
-
-    it("does not pin while there is still depth to try", () => {
-        const matrix = addEdges(emptyGraph(18), [
-            [0, 1],
-            [2, 3],
-        ]);
-
-        const second = advance(firstPass(matrix), matrix);
-        expect(second.log[1].split).toBe(false);
-        expect(second.log[1].pinned).toBeUndefined();
+        expect(pass.blocks.map((block) => block.members)).toEqual([[1, 3], [2], [0, 4]]);
     });
 
     /*
-     * Two disjoint edges: the four endpoints are interchangeable, no depth will
-     * ever separate them, so the search pins each in turn and keeps the smallest
-     * string. All four branches agree here, which is exactly why shuffling the
-     * labels cannot change the answer.
+     * Two disjoint edges: the four endpoints are interchangeable, and the graph's
+     * diameter is 1, so there is no distance left to look at. The search pins each
+     * in turn and keeps the smallest string. All four branches agree here, which
+     * is exactly why shuffling the labels cannot change the answer.
      */
     it("pins every member of a hopeless group and keeps the smallest string", () => {
         const matrix = addEdges(emptyGraph(18), [
@@ -222,7 +230,6 @@ describe("the sort", () => {
         ]);
 
         const result = solve(matrix);
-        expect(result.truncated).toBe(false);
         expect(result.state.log.some((pass) => pass.pinned !== undefined)).toBe(true);
 
         const last = result.state.log[result.state.log.length - 1];
@@ -264,7 +271,6 @@ describe("the sort", () => {
 
         const state = runAll(matrix);
 
-        expect(state.log.some((pass) => pass.split === false)).toBe(true);
         expect(groupOf(state, 0)).not.toBe(groupOf(state, 4));
     });
 
@@ -292,15 +298,12 @@ describe("the sort", () => {
 
         const state = runAll(matrix);
         const blocks = state.log[state.log.length - 1].blocks;
+        const groups = blocks
+            .map((block) => [...block.members].sort((a, b) => a - b).join(","))
+            .sort();
 
         expect(state.log.some((pass) => pass.pinned !== undefined)).toBe(false);
-        expect(blocks.map((block) => block.members)).toEqual([
-            [3],
-            [1],
-            [0, 2],
-            [4, 5],
-            [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
-        ]);
+        expect(groups).toEqual(["0,2", "1", "3", "4,5", "6,7,8,9,10,11,12,13,14,15,16,17"]);
         expect(blocks.filter((block) => block.members.length === 1)).toHaveLength(2);
         expect(blocks.filter((block) => block.twins === true)).toHaveLength(3);
     });
@@ -331,9 +334,61 @@ describe("the sort", () => {
     });
 });
 
-describe("the depth budget", () => {
-    it("shrinks as the degree grows", () => {
-        expect(depthBudget(complete(18))).toBeLessThan(depthBudget(cycle(8)));
-        expect(depthBudget(cycle(8))).toBeGreaterThanOrEqual(6);
+describe("the depth", () => {
+    it("comes from the graph, not from a setting", () => {
+        // A ball stops growing at the diameter, so the depth is bounded by the
+        // graph itself: nothing to tune, nothing to exceed.
+        expect(firstPass(cycle(8)).maxDepth).toBe(4);
+        expect(firstPass(complete(18)).maxDepth).toBe(1);
+    });
+});
+
+describe("giving up", () => {
+    it("throws instead of freezing when the branching explodes", () => {
+        // K18 minus a perfect matching: vertex-transitive, no twins, so every
+        // group that resists needs another round of pinning.
+        const edges: Array<[number, number]> = [];
+        for (let i = 0; i < 18; i++) {
+            for (let j = i + 1; j < 18; j++) {
+                if (j - i !== 9) edges.push([i, j]);
+            }
+        }
+        const matrix = addEdges(emptyGraph(18), edges);
+
+        expect(() => solve(matrix)).toThrow(SearchTooLargeError);
+    });
+});
+
+describe("comparing two nodes", () => {
+    it("walks the rings and says where they first differ", () => {
+        const p5 = path(5);
+        const positions = [0, 0, 0, 0, 0];
+
+        // 1 and 3 are symmetric, so every ring agrees.
+        const same = compareNodes(p5, positions, 1, 3, 4);
+        expect(same.equal).toBe(true);
+        expect(same.firstDifference).toBeNull();
+
+        // 1 and 2 already differ on the first ring.
+        const differ = compareNodes(p5, positions, 1, 2, 4);
+        expect(differ.equal).toBe(false);
+        expect(differ.firstDifference).toBe(2);
+    });
+
+    it("uses the current partition, so a pinned node counts", () => {
+        // Two disjoint edges: in an undifferentiated partition the two "other
+        // ends" look exactly alike. Once vertex 0 is pinned on its own, the
+        // vertex next to it stops looking like the vertex next to 3.
+        const matrix = addEdges(emptyGraph(4), [
+            [0, 1],
+            [2, 3],
+        ]);
+
+        const free = compareNodes(matrix, [0, 0, 0, 0], 1, 2, 3);
+        expect(free.equal).toBe(true);
+
+        const pinned = compareNodes(matrix, [1, 2, 2, 2], 1, 2, 3);
+        expect(pinned.equal).toBe(false);
+        expect(pinned.firstDifference).toBe(1);
     });
 });
