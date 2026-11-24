@@ -88,7 +88,7 @@
                     <p class="mt-4 stat">
                         Both axes are the positions `A…R`; the tooltip gives the input letter sitting
                         at each position. Red cells are red edges. The upper triangle of the canonical
-                        matrix, read row by row, is what graph6 encodes. Click any cell to flip that
+                        matrix, read column by column, is what graph6 encodes. Click any cell to flip that
                         edge — both grids follow.
                     </p>
                 </div>
@@ -129,11 +129,13 @@
                     The <code>A…R</code> labels never enter a key; they only make the log readable.
                 </p>
                 <p class="mt-2 max-w-3xl text-[12px] leading-relaxed text-muted">
-                    Read a key one ring at a time. <code>r1 · 8 at #2 · 28 inside · 8 back</code>
-                    means: ring 1 holds 8 vertices, all of them in group #2 (the group is the
-                    numbered block at the left of the row); 28 edges run between those 8 vertices;
-                    8 edges run back to the ring closer to the pinned vertex. Keys are compared by
-                    degree first, then ring by ring, stopping at the first ring that disagrees.
+                    The key of a group is JSON. With no ring measured it is just
+                    <code>{"degree":3}</code> — which is all pass 1 knows. Later keys add one object
+                    per ring: <code>{"degree":2,"r1":{"at":{"#2":1,"#3":1},"inside":0,"back":2}}</code>
+                    means ring 1 holds one vertex in group #2 and one in group #3, with 0 edges
+                    between them and 2 edges back to the ring closer to the pinned vertex. Keys are
+                    compared by degree first, then ring by ring, stopping at the first ring that
+                    disagrees.
                 </p>
                 <div id="s2-log" class="s2-log mt-5"></div>
             </div>

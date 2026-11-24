@@ -2,15 +2,17 @@
  * graph6 — the standard compact encoding for simple graphs (McKay).
  *
  * Format for n ≤ 62: one header byte (n + 63), then the upper triangle of the
- * adjacency matrix, row by row, packed six bits per byte (each byte + 63).
+ * adjacency matrix **column by column** — for each j, the rows i < j — packed six
+ * bits per byte (each byte + 63). Row by row is the classic mistake: it round-trips
+ * against itself, so nothing looks broken until the string leaves the page.
  * Here the encoded graph is the **red** one; blue is its complement.
  */
 
 export function toGraph6(adjacency: readonly (readonly boolean[])[]): string {
     const n = adjacency.length;
     let bits = "";
-    for (let i = 0; i < n; i++) {
-        for (let j = i + 1; j < n; j++) bits += adjacency[i][j] ? "1" : "0";
+    for (let j = 1; j < n; j++) {
+        for (let i = 0; i < j; i++) bits += adjacency[i][j] ? "1" : "0";
     }
 
     let out = String.fromCharCode(n + 63);
@@ -36,8 +38,8 @@ export function fromGraph6(text: string): boolean[][] | null {
     let buffer = 0;
     let bitsLeft = 0;
 
-    for (let i = 0; i < n; i++) {
-        for (let j = i + 1; j < n; j++) {
+    for (let j = 1; j < n; j++) {
+        for (let i = 0; i < j; i++) {
             if (bitsLeft === 0) {
                 if (position >= value.length) return null;
                 const code = value.charCodeAt(position++) - 63;

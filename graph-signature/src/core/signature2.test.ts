@@ -218,15 +218,20 @@ describe("the sort", () => {
     });
 
     /*
-     * Two disjoint edges: the four endpoints are interchangeable, and the graph's
-     * diameter is 1, so there is no distance left to look at. The search pins each
-     * in turn and keeps the smallest string. All four branches agree here, which
-     * is exactly why shuffling the labels cannot change the answer.
+     * K4 with a pendant on two of its vertices: connected, not multipartite, so no
+     * production fires and the search has to pin. The pendant vertices keep the
+     * degrees apart, but not the four vertices of the K4.
      */
     it("pins every member of a hopeless group and keeps the smallest string", () => {
-        const matrix = addEdges(emptyGraph(18), [
+        const matrix = addEdges(emptyGraph(6), [
             [0, 1],
+            [0, 2],
+            [0, 3],
+            [1, 2],
+            [1, 3],
             [2, 3],
+            [0, 4],
+            [1, 5],
         ]);
 
         const result = solve(matrix);
@@ -236,6 +241,51 @@ describe("the sort", () => {
         expect(
             last.blocks.every((block) => block.members.length === 1 || block.twins === true),
         ).toBe(true);
+    });
+
+    /*
+     * K10 minus a perfect matching is complete multipartite with five parts of
+     * two. The parts are the answer, so the production reads them and stops: one
+     * branch, no pinning, no comparison.
+     */
+    it("reads a complete multipartite graph from its parts", () => {
+        const edges: Array<[number, number]> = [];
+        for (let i = 0; i < 10; i++) {
+            for (let j = i + 1; j < 10; j++) {
+                if (j - i !== 5) edges.push([i, j]);
+            }
+        }
+
+        const result = solve(addEdges(emptyGraph(10), edges));
+        expect(result.branches).toBe(1);
+
+        const last = result.state.log[result.state.log.length - 1];
+        expect(last.criterion).toBe("multipartite");
+        expect(last.blocks.map((block) => block.members.length)).toEqual([2, 2, 2, 2, 2]);
+        expect(last.blocks.every((block) => block.twins === true)).toBe(true);
+    });
+
+    /*
+     * Five disjoint edges: every ball is an edge, so the search alone would try
+     * 10x8x6x4x2 branches. Splitting into components turns it into one cheap
+     * solve per component, and identical components are literally identical.
+     */
+    it("solves a disjoint union component by component", () => {
+        const matrix = addEdges(emptyGraph(10), [
+            [0, 1],
+            [2, 3],
+            [4, 5],
+            [6, 7],
+            [8, 9],
+        ]);
+
+        const result = solve(matrix);
+        expect(result.components).toBe(5);
+        expect(result.branches).toBeLessThan(20);
+
+        const last = result.state.log[result.state.log.length - 1];
+        expect(last.blocks.length).toBe(5);
+        expect(last.blocks.every((block) => block.twins === true)).toBe(true);
     });
 
     it("gives the same string for every relabelling of two edges", () => {
@@ -345,17 +395,21 @@ describe("the depth", () => {
 
 describe("giving up", () => {
     it("throws instead of freezing when the branching explodes", () => {
-        // K18 minus a perfect matching: vertex-transitive, no twins, so every
-        // group that resists needs another round of pinning.
-        const edges: Array<[number, number]> = [];
-        for (let i = 0; i < 18; i++) {
-            for (let j = i + 1; j < 18; j++) {
-                if (j - i !== 9) edges.push([i, j]);
-            }
-        }
-        const matrix = addEdges(emptyGraph(18), edges);
+        // The same graph as above, with a budget of two branches: the point is not
+        // that some graph is hard, but that the search refuses instead of freezing
+        // when it is allowed to run out.
+        const matrix = addEdges(emptyGraph(6), [
+            [0, 1],
+            [0, 2],
+            [0, 3],
+            [1, 2],
+            [1, 3],
+            [2, 3],
+            [0, 4],
+            [1, 5],
+        ]);
 
-        expect(() => solve(matrix)).toThrow(SearchTooLargeError);
+        expect(() => solve(matrix, 2)).toThrow(SearchTooLargeError);
     });
 });
 

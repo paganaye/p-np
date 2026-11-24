@@ -62,6 +62,8 @@ export interface PassLog {
     split?: boolean;
     /** The key every member carried, set only when the rings separated nothing. */
     sameKey?: string;
+    /** Set on the single pass that reports a graph split into components. */
+    components?: number;
     /** The groups, in order, after this pass. */
     blocks: Block[];
 }
@@ -543,6 +545,10 @@ export interface SearchResult {
     key: string;
     /** How many branches the search had to visit — the cost measure. */
     branches: number;
+    /** Nodes visited at each pinning level: the shape of the search tree. */
+    levels: number[];
+    /** Set when the graph was split into this many connected components. */
+    components?: number;
 }
 
 /**
@@ -550,7 +556,13 @@ export interface SearchResult {
  * no silent truncation: a graph that is too hard says so.
  */
 export class SearchTooLargeError extends Error {
-    constructor(readonly branches: number) {
+    constructor(
+        readonly branches: number,
+        /** The partial shape of the tree, one node count per level. */
+        readonly levels: number[],
+        /** The sort in progress when the limit was hit — already logged, not replayed. */
+        readonly state: SortState,
+    ) {
         super(`the search explored ${branches} branches without settling`);
         this.name = "SearchTooLargeError";
     }
@@ -591,13 +603,16 @@ function orderedString(
 function search(
     state: SortState,
     adjacency: readonly (readonly boolean[])[],
-    budget: { left: number; used: number },
+    budget: { left: number; used: number; levels: number[] },
+    level: number,
 ): { state: SortState; key: string } {
-    if (budget.left <= 0) throw new SearchTooLargeError(BRANCH_LIMIT);
+    const refined = refine(state, adjacency);
+    if (budget.left <= 0) {
+        throw new SearchTooLargeError(budget.used, budget.levels, refined);
+    }
     budget.left -= 1;
     budget.used += 1;
-
-    const refined = refine(state, adjacency);
+    budget.levels[level] = (budget.levels[level] ?? 0) + 1;
     const last = refined.log[refined.log.length - 1];
     const target = last.blocks.find(
         (block) => block.members.length > 1 && block.twins !== true,
@@ -611,11 +626,211 @@ function search(
     // The group resists every distance: try each member, keep the smallest.
     let best: { state: SortState; key: string } | null = null;
     for (const vertex of target.members) {
-        const candidate = search(pinVertex(refined, adjacency, vertex), adjacency, budget);
+        const candidate = search(
+            pinVertex(refined, adjacency, vertex),
+            adjacency,
+            budget,
+            level + 1,
+        );
         if (best === null || candidate.key < best.key) best = candidate;
     }
 
     return best as SearchResult;
+}
+
+/** Index sets of the connected components of the red graph, each sorted. */
+function connectedComponents(
+    adjacency: readonly (readonly boolean[])[],
+): number[][] {
+    const n = adjacency.length;
+    const seen = new Array<boolean>(n).fill(false);
+    const components: number[][] = [];
+
+    for (let start = 0; start < n; start++) {
+        if (seen[start]) continue;
+
+        const members: number[] = [];
+        const stack = [start];
+        seen[start] = true;
+
+        while (stack.length > 0) {
+            const vertex = stack.pop() as number;
+            members.push(vertex);
+            for (let other = 0; other < n; other++) {
+                if (adjacency[vertex][other] && !seen[other]) {
+                    seen[other] = true;
+                    stack.push(other);
+                }
+            }
+        }
+
+        members.sort((a, b) => a - b);
+        components.push(members);
+    }
+
+    return components;
+}
+
+/** The subgraph on the given vertices, renumbered from 0. */
+function induced(
+    adjacency: readonly (readonly boolean[])[],
+    members: readonly number[],
+): boolean[][] {
+    return members.map((row) => members.map((column) => adjacency[row][column]));
+}
+
+/**
+ * The parts of a complete multipartite graph, if it is one: the classes of
+ * non-adjacency. Returns null as soon as the relation fails to be an equivalence.
+ *
+ * A complete multipartite graph is exactly a set of independent sets joined by
+ * every possible edge — which covers K_n (singletons), K_{a,b} (two parts), the
+ * Turán graphs, and K_n minus a perfect matching (n/2 parts of size 2). Inside a
+ * part the vertices are twins, and two parts of the same size are interchangeable,
+ * so the canonical order is: parts by decreasing size, no search at all.
+ */
+function multipartiteParts(
+    adjacency: readonly (readonly boolean[])[],
+): number[][] | null {
+    const n = adjacency.length;
+    const assigned = new Array<boolean>(n).fill(false);
+    const parts: number[][] = [];
+
+    for (let vertex = 0; vertex < n; vertex++) {
+        if (assigned[vertex]) continue;
+
+        const part = [vertex];
+        for (let other = 0; other < n; other++) {
+            if (other !== vertex && !adjacency[vertex][other]) part.push(other);
+        }
+
+        for (const member of part) {
+            if (assigned[member]) return null;
+            for (const peer of part) {
+                if (member !== peer && adjacency[member][peer]) return null;
+            }
+            for (let other = 0; other < n; other++) {
+                if (!part.includes(other) && !adjacency[member][other]) return null;
+            }
+        }
+
+        for (const member of part) assigned[member] = true;
+        parts.push(part);
+    }
+
+    return parts;
+}
+
+/** The closed form: parts by decreasing size, twins inside, no branching. */
+function multipartiteResult(
+    adjacency: readonly (readonly boolean[])[],
+    parts: readonly number[][],
+): SearchResult {
+    const sorted = [...parts].sort((a, b) => b.length - a.length);
+    const order = sorted.flatMap((part) => part);
+    const n = adjacency.length;
+
+    const blocks: Block[] = [];
+    let position = 1;
+    for (const part of sorted) {
+        blocks.push({
+            start: position,
+            degree: n - part.length,
+            members: [...part],
+            fresh: true,
+            twins: part.length > 1 ? true : undefined,
+        });
+        position += part.length;
+    }
+
+    return {
+        state: {
+            order,
+            maxDepth: diameter(adjacency),
+            log: [{ pass: 1, depth: 0, criterion: "multipartite", blocks }],
+        },
+        key: orderedString(adjacency, order),
+        branches: 1,
+        levels: [1],
+    };
+}
+
+/**
+ * A disjoint union is not one hard graph: its canonical form is the sorted list of
+ * its components' canonical forms. Solve each component on its own, sort them by
+ * their canonical string, concatenate the orders. Identical components then cost
+ * exactly what one of them costs — the whole point.
+ */
+function solveComponents(
+    adjacency: readonly (readonly boolean[])[],
+    components: readonly number[][],
+): SearchResult {
+    const parts = components.map((members) => {
+        try {
+            const inner = solve(induced(adjacency, members));
+            return {
+                members,
+                inner,
+                final: inner.state.log[inner.state.log.length - 1].blocks,
+            };
+        } catch (error) {
+            // A component that gives up must not hand back indices of the subgraph.
+            if (error instanceof SearchTooLargeError) {
+                throw new SearchTooLargeError(error.branches, error.levels, {
+                    ...error.state,
+                    order: error.state.order.map((index) => members[index]),
+                    log: error.state.log.map((entry) => ({
+                        ...entry,
+                        blocks: entry.blocks.map((block) => ({
+                            ...block,
+                            members: block.members.map((index) => members[index]),
+                        })),
+                    })),
+                });
+            }
+            throw error;
+        }
+    });
+
+    parts.sort((a, b) => (a.inner.key < b.inner.key ? -1 : a.inner.key > b.inner.key ? 1 : 0));
+
+    const blocks: Block[] = [];
+    let position = 1;
+    let branches = 1;
+
+    for (const part of parts) {
+        branches += part.inner.branches;
+        for (const block of part.final) {
+            blocks.push({
+                ...block,
+                start: position,
+                members: block.members.map((index) => part.members[index]),
+            });
+            position += block.members.length;
+        }
+    }
+
+    const order = blocks.flatMap((block) => block.members);
+
+    return {
+        state: {
+            order,
+            maxDepth: diameter(adjacency),
+            log: [
+                {
+                    pass: 1,
+                    depth: 0,
+                    criterion: "components",
+                    components: parts.length,
+                    blocks,
+                },
+            ],
+        },
+        key: orderedString(adjacency, order),
+        branches,
+        levels: [],
+        components: parts.length,
+    };
 }
 
 /**
@@ -625,13 +840,22 @@ function search(
  * Throws `SearchTooLargeError` when the branching gets out of hand. Refusing
  * loudly is better than freezing the page.
  */
-export function solve(adjacency: readonly (readonly boolean[])[]): SearchResult {
-    const budget = { left: BRANCH_LIMIT, used: 0 };
-    const result = search(firstPass(adjacency), adjacency, budget);
-    return { ...result, branches: budget.used };
-}
+export function solve(
+    adjacency: readonly (readonly boolean[])[],
+    limit: number = BRANCH_LIMIT,
+): SearchResult {
+    const components = connectedComponents(adjacency);
+    if (components.length > 1) return solveComponents(adjacency, components);
 
-/** The sort without any branching — what the page shows when the search gives up. */
-export function partialSort(adjacency: readonly (readonly boolean[])[]): SortState {
-    return refine(firstPass(adjacency), adjacency);
+    // Only when a part has several vertices: for K_n (all parts of size 1) the
+    // ordinary passes already see twins and finish in one branch, and their log
+    // says more than two singleton parts do.
+    const parts = multipartiteParts(adjacency);
+    if (parts !== null && parts.some((part) => part.length > 1)) {
+        return multipartiteResult(adjacency, parts);
+    }
+
+    const budget = { left: limit, used: 0, levels: [] as number[] };
+    const result = search(firstPass(adjacency), adjacency, budget, 0);
+    return { ...result, branches: budget.used, levels: budget.levels };
 }

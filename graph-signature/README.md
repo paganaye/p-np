@@ -112,14 +112,15 @@ The panel shows two strings:
 
 Paste any graph6 string of 3–18 vertices in the field and press *Load* to bring
 that graph into the editor. Encoding: a header byte `n + 63`, then the upper
-triangle of the adjacency matrix packed six bits per byte.
+triangle of the adjacency matrix, column by column, packed six bits per byte.
 
 The rest of the page shows the same object in readable form:
 
 - **adjacency matrix, twice** — once in the input order, once in the canonical
   order, both labelled with the input letters. The upper triangle of the
-  canonical one, read row by row, is exactly the bit stream graph6 encodes, so
-  the canonical string can be checked by hand. Clicking any cell flips that edge
+  canonical one, read **column by column** (for each column `j`, the rows `i < j`),
+  is exactly the bit stream graph6 encodes, so the canonical string can be checked
+  by hand. Clicking any cell flips that edge
   in both grids;
 - **red edges** — an adjacency list over the canonical positions `1…n`.
 

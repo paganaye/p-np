@@ -1,4 +1,4 @@
-import { SearchTooLargeError, compareNodes, partialSort, solve } from "./core/signature2.ts";
+import { SearchTooLargeError, compareNodes, firstPass, solve } from "./core/signature2.ts";
 import { fromGraph6, toGraph6 } from "./core/graph6.ts";
 import type { Block, PassLog, SearchResult, SortState } from "./core/signature2.ts";
 import { GraphView } from "./ui/graphView.ts";
@@ -125,7 +125,7 @@ function blockRow(block: Block): string {
     const state =
         block.members.length === 1 ? "frozen" : block.twins === true ? "twins" : "tied";
     const full = block.key ?? "";
-    const words = full === "" ? "—" : keyLines(full);
+    const words = full === "" ? "—" : keyJson(full);
 
     return (
         `<div class="s2-row${block.fresh ? " s2-row--fresh" : ""}">` +
@@ -151,7 +151,7 @@ function verdictOf(pass: PassLog): string {
         const measured =
             pass.sameKey === undefined
                 ? ""
-                : ` (all ${pass.targetSize ?? "?"} carry ${keyText(pass.sameKey)})`;
+                : ` (all ${pass.targetSize ?? "?"} carry ${keyJson(pass.sameKey)})`;
         return `<p class="s2-pass-note">→ nothing moved at ring ${pass.depth}${measured}, going one ring out</p>`;
     }
 
@@ -162,62 +162,38 @@ function verdictOf(pass: PassLog): string {
 }
 
 /**
- * A ring section (`positions|inside|back`) in words. The positions are run-length
- * compressed, so `2.2.2.2.2.2.2.2|28|8` reads « 8 at #2 · 28 inside · 8 back »:
- * eight ring vertices, all sitting in group #2, with 28 edges among them and 8
- * edges back to the previous ring.
+ * A ring section (`positions|inside|back`) as an object: how many vertices sit in
+ * which group, how many edges lie inside the ring, how many go back to the
+ * previous one.
  */
-function ringWords(section: string): string {
-    if (section === "—") return "—";
-
+function ringObject(section: string): Record<string, unknown> {
     const [positions = "", inside = "0", back = "0"] = section.split("|");
-    const runs: { group: number; count: number }[] = [];
+    const at: Record<string, number> = {};
 
     for (const raw of positions.split(".")) {
         if (raw === "") continue;
-        const group = Number(raw);
-        const last = runs[runs.length - 1];
-        if (last !== undefined && last.group === group) last.count += 1;
-        else runs.push({ group, count: 1 });
+        const group = `#${raw}`;
+        at[group] = (at[group] ?? 0) + 1;
     }
 
-    const where =
-        runs.length === 0
-            ? "no neighbour"
-            : runs.map(({ group, count }) => `${count} at #${group}`).join(", ");
-
-    // The two extremes are what the eye needs: a ring that is a clique, or one with
-    // no edge inside it. Everything else stays a count.
-    const size = runs.reduce((sum, run) => sum + run.count, 0);
-    const edges = Number(inside);
-    const shape =
-        size > 1 && edges === (size * (size - 1)) / 2
-            ? " (complete)"
-            : size > 1 && edges === 0
-              ? " (independent)"
-              : "";
-
-    return `${where} · ${inside} inside${shape} · ${back} back`;
+    return { at, inside: Number(inside), back: Number(back) };
 }
 
-/** The key as one line, for the places that have no room for a block. */
-function keyText(key: string): string {
-    const [, ...rings] = key.split(";");
-    if (rings.length === 0) return "degree only";
-    return rings.map((section, index) => `r${index + 1} ${ringWords(section)}`).join(" · ");
+function ringJson(section: string): string {
+    return section === "—" ? "—" : JSON.stringify(ringObject(section));
 }
 
-/** The same, one line per ring, for the log grid. */
-function keyLines(key: string): string {
-    const [, ...rings] = key.split(";");
-    if (rings.length === 0) return "degree only";
-    return rings
-        .map(
-            (section, index) =>
-                `<div class="s2-ring"><span class="s2-ring-tag">r${index + 1}</span>` +
-                `<span>${ringWords(section)}</span></div>`,
-        )
-        .join("");
+/**
+ * The whole key as JSON. With no ring measured it is just the degree — the JSON
+ * says `{"degree":3}`, which is the whole content of pass 1.
+ */
+function keyJson(key: string): string {
+    const [degree = "0", ...rings] = key.split(";");
+    const value: Record<string, unknown> = { degree: Number(degree) };
+    rings.forEach((section, index) => {
+        value[`r${index + 1}`] = ringObject(section);
+    });
+    return JSON.stringify(value);
 }
 
 function renderSignature(result: SearchResult, failure: string | null): void {
@@ -268,21 +244,45 @@ function renderSignature(result: SearchResult, failure: string | null): void {
 
     const log = document.getElementById("s2-log");
     if (log) {
-        log.innerHTML = state.log
+        // The passes below trace a single branch. The tree itself is this line:
+        // how many nodes the search had to open at each pinning level.
+        const shape =
+            result.components !== undefined
+                ? `${result.components} components`
+                : result.levels.length === 0
+                  ? "—"
+                  : `${result.levels.join(" → ")}${failure === null ? "" : " …"}`;
+        const cost = `${result.branches} ${result.branches === 1 ? "branch" : "branches"}`;
+        const trace =
+            `<p class="s2-search">` +
+            `<span class="s2-search-tag">search</span>` +
+            `<span>${shape}</span>` +
+            `<span>${cost}${failure === null ? ", settled" : ", stopped at the limit"}</span>` +
+            `</p>`;
+
+        log.innerHTML =
+            trace +
+            state.log
             .map((pass) => {
                 const produced = pass.blocks.filter((block) => block.fresh).length;
                 const detail =
-                    pass.pinned !== undefined
-                        ? `out of rings — pin ${label(pass.pinned)} out of #${pass.target ?? "?"}`
-                        : pass.depth === 0
-                          ? "the red degree"
-                          : pass.split === false
-                            ? `rings ${pass.depth} — nothing separated`
-                            : `rings ${pass.depth} — refine #${pass.target}${
-                                  pass.targetSize !== undefined && pass.targetSize > 1
-                                      ? `–#${(pass.target ?? 0) + pass.targetSize - 1}`
-                                      : ""
-                              } → ${produced} keys`;
+                    pass.criterion === "components"
+                        ? `${pass.components ?? pass.blocks.length} components, each solved on its own`
+                        : pass.criterion === "multipartite"
+                          ? `complete multipartite — parts of ${pass.blocks
+                                .map((block) => block.members.length)
+                                .join(" · ")}`
+                          : pass.pinned !== undefined
+                            ? `out of rings — pin ${label(pass.pinned)} out of #${pass.target ?? "?"}`
+                            : pass.depth === 0
+                              ? "the red degree"
+                              : pass.split === false
+                                ? `rings ${pass.depth} — nothing separated`
+                                : `rings ${pass.depth} — refine #${pass.target}${
+                                      pass.targetSize !== undefined && pass.targetSize > 1
+                                          ? `–#${(pass.target ?? 0) + pass.targetSize - 1}`
+                                          : ""
+                                  } → ${produced} keys`;
 
                 return (
                     `<div class="s2-pass">` +
@@ -430,8 +430,8 @@ function renderComparison(): void {
             (ring) =>
                 `<div class="cmp-row${ring.equal ? "" : " cmp-row--diff"}">` +
                 `<span class="cmp-ring">ring ${ring.ring}</span>` +
-                `<code>${label(a)} ${ringWords(ring.left)}</code>` +
-                `<code>${label(b)} ${ringWords(ring.right)}</code>` +
+                `<code>${label(a)} ${ring.ring === 0 ? `{"degree":${Number(ring.left)}}` : ringJson(ring.left)}</code>` +
+                `<code>${label(b)} ${ring.ring === 0 ? `{"degree":${Number(ring.right)}}` : ringJson(ring.right)}</code>` +
                 `<span class="cmp-mark">${ring.equal ? "=" : "≠"}</span>` +
                 `</div>`,
         )
@@ -455,8 +455,19 @@ function refresh(): void {
                 : error instanceof Error
                   ? error.message
                   : "the search gave up";
-        currentState = partialSort(adjacency);
-        renderSignature({ state: currentState, key: "", branches: 0 }, message);
+        // No replay: the log below is the branch that was being explored when the
+        // limit was hit, exactly as it was recorded.
+        const gaveUp = error instanceof SearchTooLargeError ? error : null;
+        currentState = gaveUp?.state ?? firstPass(adjacency);
+        renderSignature(
+            {
+                state: currentState,
+                key: "",
+                branches: gaveUp?.branches ?? 0,
+                levels: gaveUp?.levels ?? [],
+            },
+            message,
+        );
     }
 
     if (currentState !== null) {

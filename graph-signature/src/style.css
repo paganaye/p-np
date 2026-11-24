@@ -61,6 +61,28 @@
     font-size: 12.5px;
 }
 
+/* The shape of the search tree: nodes opened at each pinning level. */
+.s2-search {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: baseline;
+    margin: 0 0 18px;
+    padding-bottom: 11px;
+    border-bottom: 1px solid var(--color-line);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-ink);
+}
+
+.s2-search-tag {
+    color: var(--color-muted);
+    font-family: var(--font-sans);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
 .s2-pass + .s2-pass {
     border-top: 1px dashed var(--color-line);
     padding-top: 18px;
@@ -112,7 +134,7 @@
 
 .s2-row {
     display: grid;
-    grid-template-columns: 76px 72px minmax(0, 0.8fr) minmax(0, 1.2fr) 64px;
+    grid-template-columns: 78px 66px minmax(0, 0.7fr) minmax(0, 1.7fr) 58px;
     gap: 12px;
     align-items: start;
     padding: 5px 9px;
@@ -123,22 +145,12 @@
 
 .s2-key {
     color: var(--color-muted);
-    font-size: 10.5px;
+    font-family: var(--font-mono);
+    font-size: 10px;
     line-height: 1.5;
     white-space: normal;
     overflow-wrap: anywhere;
     cursor: help;
-}
-
-.s2-ring {
-    display: flex;
-    gap: 6px;
-}
-
-.s2-ring-tag {
-    flex: none;
-    color: var(--color-accent);
-    font-variant-numeric: tabular-nums;
 }
 
 .s2-rank {
