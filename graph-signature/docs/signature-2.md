@@ -1,9 +1,9 @@
 **English** · [Français](signature-2-fr.md)
 
-> **Superseded.** `Signature 2` is being rebuilt as a pass-by-pass sort whose
-> output is meant to be a canonical graph6, with a log panel under the graph.
-> Only pass 1 exists today. The text below describes the previous, multi-pass
-> version; it will be rewritten once the new one is complete.
+> **Historical.** This text describes an earlier, multi-pass colour-refinement
+> version of the page. The signature is now a pass-by-pass **sort** whose output
+> is a canonical graph6 — see the [README](../README.md). The document is kept for
+> the design discussion, not because it matches the code.
 
 # Signature 2 — colour refinement, one pass at a time
 

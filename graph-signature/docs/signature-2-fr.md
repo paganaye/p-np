@@ -1,9 +1,10 @@
 [English](signature-2.md) · **Français**
 
-> **Remplacé.** `Signature 2` est réécrite comme un tri passe par passe dont la
-> sortie est censée être un `graph6` canonique, avec un journal sous le graphe.
-> Seule la passe 1 existe aujourd'hui. Le texte ci-dessous décrit la version
-> précédente, multi-passes ; il sera réécrit quand la nouvelle sera complète.
+> **Historique.** Ce texte décrit une version antérieure de la page, un
+> raffinement de couleurs en plusieurs passes. La signature est désormais un
+> **tri** passe par passe dont la sortie est un `graph6` canonique — voir le
+> [README](../README.md). Le document est conservé pour la discussion de
+> conception, pas parce qu'il décrit le code.
 
 # Signature 2 — le raffinement de couleurs, une passe à la fois
 

@@ -1,21 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { firstPass } from "./signature2.ts";
+import { advance, areTwins, depthBudget, firstPass, treeKey } from "./signature2.ts";
+import type { SortState } from "./signature2.ts";
 
 type Matrix = boolean[][];
 
 /*
- * Signature 2 is being rebuilt one pass at a time, so only pass 1 exists. These
- * tests pin down exactly what that pass promises:
- *
- * - it groups the vertices by red degree, highest degree first;
- * - it keeps the input order inside a tied block (arbitrary, but it must be
- *   deterministic);
- * - it freezes the vertices that are alone in their block;
- * - the block profile — degrees and sizes — is the same for every relabelling.
- *
- * What is *not* promised yet: any canonical graph6. The order inside a tied
- * block is the input order, so two labelled copies of the same graph can
- * disagree on it.
+ * The signature is a sort whose key is a **walk tree**: from a vertex, follow
+ * every path and mark a branch that comes back to one of its ancestors, with the
+ * distance it took. These tests pin down that this really is stronger than
+ * counting neighbours — the triangle and the square are the case that fails any
+ * neighbour counting and yet must be separated.
  */
 
 // ---------------------------------------------------------------- builders ---
@@ -48,16 +42,18 @@ function complete(n: number): Matrix {
     return addEdges(emptyGraph(n), edges);
 }
 
-function star(centre: number, leaves: number): Matrix {
-    const edges: Array<[number, number]> = [];
-    for (let i = 0; i < leaves; i++) edges.push([centre, i + 1]);
-    return addEdges(emptyGraph(leaves + 1), edges);
-}
-
-function completeBipartite(a: number, b: number): Matrix {
-    const edges: Array<[number, number]> = [];
-    for (let i = 0; i < a; i++) for (let j = 0; j < b; j++) edges.push([i, a + j]);
-    return addEdges(emptyGraph(a + b), edges);
+function disjoint(...blocks: readonly Matrix[]): Matrix {
+    const matrix = emptyGraph(blocks.reduce((sum, block) => sum + block.length, 0));
+    let offset = 0;
+    for (const block of blocks) {
+        for (let i = 0; i < block.length; i++) {
+            for (let j = 0; j < block.length; j++) {
+                if (block[i][j]) matrix[offset + i][offset + j] = true;
+            }
+        }
+        offset += block.length;
+    }
+    return matrix;
 }
 
 // ---------------------------------------------------------------- helpers ---
@@ -105,134 +101,118 @@ function permute(matrix: Matrix, permutation: readonly number[]): Matrix {
     return out;
 }
 
-/** The label-free content of a pass: each block's degree and size, in order. */
-function profile(matrix: Matrix): string {
-    return firstPass(matrix)
-        .log[0].blocks.map((block) => `${block.degree}:${block.members.length}`)
+function runAll(matrix: Matrix): SortState {
+    let state = firstPass(matrix);
+    for (let pass = 0; pass < 20; pass++) {
+        const next = advance(state, matrix);
+        if (next === state) break;
+        state = next;
+    }
+    return state;
+}
+
+function groupOf(state: SortState, vertex: number): number {
+    const last = state.log[state.log.length - 1];
+    for (const block of last.blocks) if (block.members.includes(vertex)) return block.start;
+    return -1;
+}
+
+/** Position, degree and size of every group after the last pass. */
+function profileOf(state: SortState): string {
+    return state.log[state.log.length - 1].blocks
+        .map((block) => `${block.start}:${block.degree}:${block.members.length}`)
         .join(" ");
+}
+
+function neighboursOf(matrix: Matrix): number[][] {
+    return matrix.map((row) => row.flatMap((red, index) => (red ? [index] : [])));
 }
 
 // ------------------------------------------------------------------ tests ---
 
-describe("pass 1 — sort by red degree", () => {
-    it("groups by degree and puts the highest first", () => {
-        const blocks = firstPass(path(5)).log[0].blocks;
+describe("the walk tree", () => {
+    it("separates a triangle from a square at depth 3", () => {
+        const triangle = neighboursOf(cycle(3));
+        const square = neighboursOf(cycle(4));
 
-        expect(blocks.map((block) => block.degree)).toEqual([2, 1]);
-        expect(blocks.map((block) => block.members.length)).toEqual([3, 2]);
+        expect(treeKey(triangle, 0, 2)).toBe(treeKey(square, 0, 2));
+        expect(treeKey(triangle, 0, 3)).not.toBe(treeKey(square, 0, 3));
     });
 
-    it("keeps the input order inside a tied block", () => {
-        expect(firstPass(path(5)).order).toEqual([1, 2, 3, 0, 4]);
+    it("marks the return with the distance it took", () => {
+        const triangle = neighboursOf(cycle(3));
+        expect(treeKey(triangle, 0, 3)).toContain("^3");
+        expect(treeKey(triangle, 0, 2)).not.toContain("^3");
     });
 
-    it("sorts the degrees strictly downwards", () => {
-        const blocks = firstPass(randomGraph(14, 3)).log[0].blocks;
-
-        for (let i = 1; i < blocks.length; i++) {
-            expect(blocks[i - 1].degree).toBeGreaterThan(blocks[i].degree);
-        }
-    });
-
-    it("covers every vertex exactly once", () => {
-        const state = firstPass(randomGraph(15, 7));
-
-        expect([...state.order].sort((a, b) => a - b)).toEqual(
-            Array.from({ length: 15 }, (_, i) => i),
-        );
-    });
-
-    it("stops after pass 1", () => {
-        expect(firstPass(complete(6)).log).toHaveLength(1);
+    it("is the degree at depth 1", () => {
+        const p5 = neighboursOf(path(5));
+        expect(treeKey(p5, 0, 1)).toBe("(.)");
+        expect(treeKey(p5, 2, 1)).toBe("(..)");
     });
 });
 
-describe("groups", () => {
-    /*
-     * A group is the unit the next pass will refine: a set of vertices that share
-     * a key. `frozen` and `tied` are properties of a *group*, not of a vertex —
-     * that is the whole point of numbering them.
-     */
-    it("numbers the groups by position, 1 to n", () => {
-        const blocks = firstPass(star(0, 5)).log[0].blocks;
-        let next = 1;
-
-        for (const block of blocks) {
-            expect(block.start).toBe(next);
-            next += block.members.length;
-        }
-
-        expect(next).toBe(6);
-        expect(blocks.map((block) => block.degree)).toEqual([5, 1]);
+describe("twins", () => {
+    it("finds none between two vertices of different neighbourhoods", () => {
+        const p5 = path(5);
+        expect(areTwins(p5, 1, 2)).toBe(false);
     });
 
-    it("gives a tied group several numbers and a frozen group one", () => {
-        const blocks = firstPass(path(5)).log[0].blocks;
-
-        // Path P5: three vertices of degree 2, then two of degree 1.
-        expect(blocks[0].start).toBe(1);
-        expect(blocks[0].members).toHaveLength(3); // #1–#3, tied
-        expect(blocks[1].start).toBe(4);
-        expect(blocks[1].members).toHaveLength(2); // #4–#5, tied
+    it("finds the opposite vertices of a square", () => {
+        const square = cycle(4);
+        expect(areTwins(square, 0, 2)).toBe(true);
+        expect(areTwins(square, 0, 1)).toBe(false);
     });
 
-    it("freezes a group of one", () => {
-        const [centre, leaves] = firstPass(star(0, 5)).log[0].blocks;
-
-        expect(centre.members).toEqual([0]);
-        expect(leaves.members).toEqual([1, 2, 3, 4, 5]);
-    });
-
-    it("has a single tied group in a regular graph", () => {
-        for (const matrix of [complete(9), cycle(8), emptyGraph(6)]) {
-            const entry = firstPass(matrix).log[0];
-
-            expect(entry.blocks).toHaveLength(1);
-            expect(entry.blocks[0].members).toHaveLength(matrix.length);
-        }
-    });
-
-    it("makes the groups a partition of the vertices", () => {
-        const entry = firstPass(randomGraph(12, 5)).log[0];
-        const flatten = entry.blocks.flatMap((block) => block.members);
-
-        expect([...flatten].sort((a, b) => a - b)).toEqual(
-            Array.from({ length: 12 }, (_, i) => i),
-        );
-        expect(entry.order).toEqual(flatten);
+    it("marks a complete graph as one twin group", () => {
+        const block = firstPass(complete(9)).log[0].blocks[0];
+        expect(block.members).toHaveLength(9);
+        expect(block.twins).toBe(true);
     });
 });
 
-describe("invariance of the profile", () => {
-    /*
-     * The profile is what a pass leaves behind when you ignore *which* vertex is
-     * which: the degrees and sizes of the blocks, in order. That must not depend
-     * on the labelling, otherwise nothing downstream can be canonical.
-     */
-    it("does not change under relabelling", () => {
-        const shapes = [
-            path(7),
-            cycle(8),
-            star(0, 6),
-            completeBipartite(3, 3),
-            randomGraph(12, 5),
-            randomGraph(16, 11),
-        ];
+describe("the sort", () => {
+    it("orders by degree first", () => {
+        const state = firstPass(path(5));
+        expect(state.order).toEqual([1, 2, 3, 0, 4]);
+        expect(state.log[0].blocks.map((block) => block.degree)).toEqual([2, 1]);
+    });
+
+    it("splits P5's middle group at depth 2", () => {
+        const matrix = path(5);
+        const pass = advance(firstPass(matrix), matrix).log[1];
+
+        expect(pass.target).toBe(1);
+        expect(pass.split).toBe(true);
+        expect(pass.blocks.map((block) => block.members)).toEqual([[2], [1, 3], [0, 4]]);
+    });
+
+    it("separates the triangle from the square", () => {
+        const matrix = disjoint(cycle(3), cycle(4), emptyGraph(11));
+        const state = runAll(matrix);
+
+        expect(groupOf(state, 0)).not.toBe(groupOf(state, 3));
+        expect(state.log.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it("keeps the profile invariant under relabelling", () => {
+        const shapes = [path(6), cycle(7), randomGraph(10, 3), disjoint(cycle(3), cycle(4))];
 
         for (const matrix of shapes) {
-            const expected = profile(matrix);
-            const random = mulberry32(2024);
+            const expected = profileOf(runAll(matrix));
+            const random = mulberry32(11);
 
-            for (let round = 0; round < 32; round++) {
-                expect(profile(permute(matrix, shuffle(matrix.length, random)))).toBe(expected);
+            for (let round = 0; round < 12; round++) {
+                const permuted = permute(matrix, shuffle(matrix.length, random));
+                expect(profileOf(runAll(permuted))).toBe(expected);
             }
         }
     });
+});
 
-    it("is deterministic", () => {
-        const matrix = randomGraph(11, 7);
-
-        expect(profile(matrix)).toBe(profile(matrix));
-        expect(firstPass(matrix).order).toEqual(firstPass(matrix).order);
+describe("the depth budget", () => {
+    it("shrinks as the degree grows", () => {
+        expect(depthBudget(complete(18))).toBeLessThan(depthBudget(cycle(8)));
+        expect(depthBudget(cycle(8))).toBeGreaterThanOrEqual(6);
     });
 });
