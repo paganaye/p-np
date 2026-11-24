@@ -1,5 +1,10 @@
 **English** · [Français](signature-2-fr.md)
 
+> **Superseded.** `Signature 2` is being rebuilt as a pass-by-pass sort whose
+> output is meant to be a canonical graph6, with a log panel under the graph.
+> Only pass 1 exists today. The text below describes the previous, multi-pass
+> version; it will be rewritten once the new one is complete.
+
 # Signature 2 — colour refinement, one pass at a time
 
 `Signature 2` is the second signature panel of the page. It answers the same
@@ -84,11 +89,50 @@ Then:
 Equivalently: two vertices stay together exactly as long as they had the same
 class **and** the same multiset of class numbers among their neighbours.
 
-### Why it only ever splits
+### Why it only ever splits — and never reorders
 
 Each new class is a subset of an old one, so the partition can only get finer.
 It can never merge two vertices that a previous pass had separated. This
 monotonicity is what makes the stopping rule below sound.
+
+There is a second, stronger property: **the order is preserved**. The key of a
+pass starts with the vertex's current class number, so every child of class `c`
+sorts contiguously, inside the slot of class `c`, and can never land on the other
+side of a neighbouring class. Hence:
+
+> if `x` sorts before `y` at pass `k`, then `x` sorts before `y` at every later
+> pass.
+
+The refinement is therefore an **in-place subdivision** of the ordered list, not
+a new sort:
+
+```
+pass 1   F < B = C = D < A = E
+pass 2   F < (B C D refined) < (A E refined)
+pass 3   F < ...            < ...
+```
+
+Two consequences:
+
+- **a sealed vertex is finished.** A class of size 1 cannot split again, so its
+  vertex never needs refining again. It stays in the state only as a *value*, the
+  class number its neighbours read.
+- **only the tied blocks need work.** A pass only has to refine blocks of size
+  ≥ 2.
+
+The first class is a special case: nothing can ever be inserted before it, so if
+it is a singleton at pass 1 it is the first vertex for good — its final label `A`
+is known at pass 1.
+
+One warning about labels. The property freezes the **order**, not the **position
+numbers**. If a block *before* a sealed vertex splits, everything behind it
+slides. In `C4 ∪ P4 ∪ {isolated}`, the isolated vertex is last at pass 1 and still
+last at the end, but its label goes from `C` to `D` when `[6, 2, 1]` becomes
+`[4, 2, 2, 1]`. Its order is final, its letter is not — only class `0` has both.
+
+An implementation that wants stable names can therefore number classes by their
+split path (`0`, `2`, `2.0`, `2.1`) instead of by rank: the label of a sealed
+vertex is then fixed for good, and the position becomes a display-time value.
 
 ---
 

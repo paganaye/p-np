@@ -1,5 +1,10 @@
 [English](signature-2.md) · **Français**
 
+> **Remplacé.** `Signature 2` est réécrite comme un tri passe par passe dont la
+> sortie est censée être un `graph6` canonique, avec un journal sous le graphe.
+> Seule la passe 1 existe aujourd'hui. Le texte ci-dessous décrit la version
+> précédente, multi-passes ; il sera réécrit quand la nouvelle sera complète.
+
 # Signature 2 — le raffinement de couleurs, une passe à la fois
 
 `Signature 2` est le second panneau de signature de la page. Il répond à la même
@@ -89,12 +94,54 @@ Autrement dit : deux sommets restent ensemble exactement tant qu'ils avaient la
 même classe **et** le même multiensemble de numéros de classe parmi leurs
 voisins.
 
-### Pourquoi ça ne peut que séparer
+### Pourquoi ça ne peut que séparer — et jamais réordonner
 
 Chaque nouvelle classe est un sous-ensemble d'une ancienne, donc la partition ne
 peut que s'affiner. Elle ne peut jamais fusionner deux sommets qu'une passe
 précédente avait séparés. C'est cette monotonie qui rend la règle d'arrêt
 ci-dessous rigoureuse.
+
+Il y a une seconde propriété, plus forte : **l'ordre est conservé**. La clé d'une
+passe commence par le numéro de classe courant du sommet, donc tous les enfants
+d'une classe `c` se trient de façon contiguë, à l'intérieur du créneau de la
+classe `c`, et ne peuvent jamais atterrir de l'autre côté d'une classe voisine.
+D'où :
+
+> si `x` se trie avant `y` à la passe `k`, alors `x` se trie avant `y` à toutes
+> les passes suivantes.
+
+Le raffinement est donc une **subdivision sur place** de la liste ordonnée, pas un
+nouveau tri :
+
+```
+passe 1   F < B = C = D < A = E
+passe 2   F < (B C D raffinés) < (A E raffinés)
+passe 3   F < ...              < ...
+```
+
+Deux conséquences :
+
+- **un sommet scellé est terminé.** Une classe de taille 1 ne peut plus se scinder,
+  donc son sommet n'a plus jamais besoin d'être raffiné. Il ne reste dans l'état
+  que comme *valeur* : le numéro de classe que lisent ses voisins.
+- **seuls les blocs encore liés demandent du travail.** Une passe n'a à raffiner
+  que les blocs de taille ≥ 2.
+
+La première classe est un cas à part : rien ne peut jamais s'insérer devant elle.
+Si elle est un singleton à la passe 1, son sommet est premier pour de bon — son
+label final `A` est connu dès la passe 1.
+
+Une mise en garde sur les labels. La propriété fige l'**ordre**, pas les
+**numéros de position**. Si un bloc *devant* un sommet scellé se scinde, tout ce
+qui le suit glisse. Dans `C4 ∪ P4 ∪ {isolé}`, le sommet isolé est dernier à la
+passe 1 et le reste à la fin, mais son label passe de `C` à `D` quand `[6, 2, 1]`
+devient `[4, 2, 2, 1]`. Son ordre est définitif, sa lettre non — seule la
+classe `0` a les deux.
+
+Une implémentation qui veut des noms stables peut donc numéroter les classes par
+leur **chemin de scission** (`0`, `2`, `2.0`, `2.1`) plutôt que par leur rang : le
+label d'un sommet scellé est alors fixé pour de bon, et la position devient une
+valeur calculée à l'affichage.
 
 ---
 

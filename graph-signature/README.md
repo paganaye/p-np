@@ -59,67 +59,38 @@ The JSON is cut at 24 000 characters (very symmetric colourings explode).
 
 ## Signature 2
 
-A second, independent panel, deliberately kept beside the first until it earns
-its place. It computes the **colour refinement** on integer classes instead of
-unrolling trees:
+Being rebuilt from scratch, as a **sort, one pass at a time**, whose end product
+is meant to be a **canonical graph6** — the same string for every graph
+isomorphic to this one. Only **pass 1** exists today.
 
-- state = one integer per vertex (its class); pass 0 is the red degree;
-- a pass rewrites each class from `(old class, sorted classes of the neighbours)`
-  and renumbers the classes in canonical order — an order that never looks at
-  the `A…R` labels;
-- the loop stops as soon as a pass leaves the partition **unchanged**, and that
-  is a proof of the fixed point: the refinement only splits classes, never
-  merges them, so nothing can change afterwards.
+The goal is not a JSON tree but a string: the red graph re-indexed in the
+canonical order and encoded as graph6, so two graphs can be compared with `===`.
 
-Nothing is unrolled, so nothing explodes: the panel answers immediately on
-`K18` all red with `1 class · 1 pass · fixed point`, where the first signature
-exhausts its 30 000-node budget.
+How a pass works:
 
-The panel renders it as indented JSON, like the first signature — same document
-for both, so they can be compared line by line:
+- the vertices are numbered `1..n` by the current order. A pass cuts them into
+  **groups**, each a contiguous range of those numbers: `#1` for a frozen group,
+  `#2–#4` for a tied one. The range is the group's identity — later passes refine
+  a group by its position, never by its members' labels;
+- a group of one is **frozen**: no later pass can move that vertex across
+  another group. A group of two or more is **tied**, and only tied groups have
+  anything left to refine;
+- the key is built from numbers only; the `A…R` labels are for reading the log and
+  never enter a key;
+- a pass works **inside** the groups of the previous one, so the order is
+  subdivided in place and never re-sorted: a group never crosses its neighbour,
+  and once two vertices are ordered they stay ordered.
 
-```json
-{
-  "stable": true,
-  "passes": [
-    {
-      "pass": 0,
-      "classes": [
-        { "size": 7, "views": [{ "count": 5, "neighbours": [0, 0] },
-                               { "count": 2, "neighbours": [0, 1] }] },
-        { "size": 2, "views": [{ "count": 2, "neighbours": [0] }] }
-      ]
-    },
-    {
-      "pass": 4,
-      "classes": [
-        { "size": 1, "views": [{ "count": 1, "neighbours": [1, 1] }] },
-        { "size": 2, "views": [{ "count": 2, "neighbours": [0, 2] }] },
-        { "size": 2, "views": [{ "count": 2, "neighbours": [1, 3] }] },
-        { "size": 2, "views": [{ "count": 2, "neighbours": [2, 4] }] },
-        { "size": 2, "views": [{ "count": 2, "neighbours": [3] }] }
-      ],
-      "split": false
-    }
-  ]
-}
-```
+Pass 1 sorts by red degree, highest first. The full-width panel under the graph is
+the log: one row per group, with its position range, its degree, its members and
+its state (frozen or tied) — plus the graph6 of the current order, flagged as
+provisional because tied groups still keep their input order.
 
-Each pass carries its **full** result, not just the class sizes: for every class,
-`size` and the distinct `views` of its members — the sorted class numbers of
-their neighbours, with how many members have each. A class with a single view
-cannot split again; a pass where *every* class has a single view is the fixed
-point, which is exactly what `"split": false` says.
-
-The views matter because `size` alone collides: two graphs can have the same
-class sizes pass after pass and still connect those classes differently. The
-honest limit is the other side of it — when the refinement ends on a single
-class, every 4-regular graph on 9 vertices reads `1 class, 4 neighbours each`,
-and no amount of refinement separates them. That is the known ceiling of colour
-refinement, not a bug in the panel.
-
-No vertex label ever appears. The canonical class order is computed by comparing
-class numbers only, and `pass 0` is the initial split by red degree.
+Not there yet, and the reason it matters: a canonical graph6 needs a total order.
+When a block cannot be split, the order inside it is arbitrary, and only **twins**
+(the vertices interchangeable without touching anything else) make that order
+harmless. `C6` is the counterexample — vertex-transitive, no twins, so different
+orders give genuinely different matrices.
 
 Full write-up, with the fields explained one by one and worked examples:
 [docs/signature-2.md](docs/signature-2.md), and the French version
@@ -132,47 +103,26 @@ pnpm test          # vitest run
 pnpm test:watch
 ```
 
-Two different properties are checked, and they must not be confused:
+The suite pins down what **pass 1** promises, and nothing more:
 
-- **invariance** — isomorphic graphs give the same signature. A failure is a bug:
-  the signature depends on the labelling. Only `passes` is compared; `vector`
-  is *not* invariant (it is permuted with the labels).
-- **completeness** — same signature implies isomorphic. A failure is expected:
-  it is the known ceiling of colour refinement, and the census measures it.
+- it groups by red degree, highest first, and the degrees of the blocks decrease
+  strictly;
+- the groups' position ranges are contiguous — `1..n` with no gap — and their
+  members concatenate to the order;
+- a group of one is frozen; a regular graph has exactly one tied group;
+- the input order is kept inside a tied group (arbitrary, but deterministic);
+- the **profile** — each block's degree and size, in order — is the same for every
+  relabelling, checked on six shapes over 32 random permutations each;
+- the module stops after pass 1 on purpose.
 
-The core test enumerates **every labelled graph** of order 3 to 6 and counts the
-distinct signatures. Since every labelling of every graph is fed in, an
-invariance bug shows up as far too many distinct signatures, and a completeness
-failure as too few.
+What is *not* tested, because it is not true yet: that the graph6 is canonical.
+The order inside a tied block is the input order, so two labelled copies of the
+same graph can still disagree.
 
-| order | labelled graphs | expected distinct signatures | why |
-|---|---|---|---|
-| 3 | 8 | 4 | all graphs separated (OEIS A000088) |
-| 4 | 64 | 11 | idem |
-| 5 | 1 024 | 34 | idem |
-| 6 | 32 768 | 152 | 156 classes, minus the four merging pairs |
-
-The four pairs at order 6 are the known ones, and they are asserted *explicitly*
-as a positive control: a test that never finds them is itself suspect.
-
-- `C6` and `2×C3` — the two 2-regular graphs;
-- `K3,3` and the triangular prism — the two 3-regular graphs;
-- `K3,3 − e` and `prism − e` — both of degree sequence `3,3,3,3,2,2`;
-- their complements — both of degree sequence `3,3,2,2,2,2`.
-
-The last two are the ones that are easy to miss: they are not regular, but they
-share the quotient `A(2) ↔ B(4)` where each `A` vertex has two neighbours in `B`
-and each `B` vertex has one in `A` and two in `B`. Colour refinement counts
-neighbours per class, so it cannot see *which* ones — in one graph the two
-`B`-neighbours of an `A` vertex are opposite in the induced `C4`, in the other
-they are adjacent.
-
-Other tests: invariance under 64 random relabellings for seven shapes (up to 16
-vertices), determinism, the internal consistency of the record (`views` sum to
-`size`, a settled pass has one view per class), and the cross-check against the
-tree signature (the tree's budget explodes on `K18` where the refinement settles
-immediately; a graph the tree resolves completely is also resolved by the
-refinement).
+The previous, multi-pass version had a heavier suite — an exhaustive enumeration
+of every labelled graph of order 3 to 6, with the four known collisions at order
+6 spelled out. That suite died with the implementation; the enumeration harness
+is worth bringing back once the new version reaches a total order.
 
 ## graph6
 
