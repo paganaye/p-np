@@ -2,27 +2,34 @@
  * Signature 2 — sorting the vertices, one pass at a time.
  *
  * The goal is a canonical graph6: the same string for every graph isomorphic to
- * this one. The route is a sequence of passes. Each pass sorts the vertices of
- * one group by a key that is built only from numbers and structure — the `A…R`
- * input labels never enter a key, they are only there to read the log.
+ * this one. Vertices are numbered `1..n` by the current order, and a pass cuts
+ * them into **groups** — contiguous ranges of those numbers. The range is the
+ * group's identity; a pass refines a group by its position, never by its
+ * members' labels.
  *
- * The key is a **walk tree**: from a vertex, follow every path, and mark a branch
- * that comes back to one of its own ancestors with the distance it took. That
- * marker is what makes the key stronger than counting neighbours: a triangle
- * comes back at distance 3, a square at distance 4, so at depth 3 their trees
- * already differ, while any amount of neighbour counting calls them identical.
+ * The key of a vertex is its **walk tree**, in which every node also carries the
+ * position of its group:
  *
- * Pass `p` uses depth `p`: pass 1 is the degree, pass 2 one more ring, and so on.
- * A group whose members have not been separated by depth `p` is retried at depth
- * `p + 1`, which is how the triangle and the square finally split.
+ * - the ring of neighbours gives the degree, two rings give the neighbourhood of
+ *   the neighbourhood, and so on — that is what tells a triangle from a square,
+ *   which any neighbour *counting* calls identical;
+ * - a branch that comes back to one of its own ancestors is written `^k`, `k`
+ *   steps up — that is what records the length of a cycle;
+ * - the position of each node is what lets a pinned vertex matter to its
+ *   neighbours, instead of being one more indistinguishable leaf.
  *
- * Two escape hatches keep it finite:
+ * Pass `p` looks `p` rings deep. When that separates nothing, the pass **pins**
+ * the first member of the group instead: the vertex becomes a group of one, so
+ * the next pass sees it as a position of its own and its neighbours can be told
+ * apart.
  *
- * - **twins.** Vertices that a swap can exchange without touching anything else
- *   are never separable, and their order is harmless — the matrix is the same.
- *   Such a group is marked `twins` and skipped.
- * - **depth budget.** The tree grows like `degree^depth`, so the depth is capped
- *   from the largest degree. Past the cap the sort stops and the page says so.
+ * Two things keep it finite:
+ *
+ * - **twins** — vertices a swap can exchange without touching any other edge —
+ *   are never separable, and their order is harmless: the matrix does not change.
+ *   Such a group is marked and skipped.
+ * - the tree grows like `degree^depth`, so the depth is capped from the largest
+ *   degree. Past the cap the sort stops and the page says so.
  */
 
 export interface Block {
@@ -44,14 +51,14 @@ export interface PassLog {
     pass: number;
     /** How many rings the key looked at. */
     depth: number;
-    /** What this pass sorted by, spelled out for the panel. */
+    /** What this pass did, spelled out for the panel. */
     criterion: string;
     /** The position of the group that was refined. */
     target?: number;
     /** How many vertices that group held before the pass. */
     targetSize?: number;
-    /** False when the refined group did not split at this depth. */
-    split?: boolean;
+    /** Set when the pass pinned a vertex instead of splitting on keys. */
+    pinned?: number;
     /** The groups, in order, after this pass. */
     blocks: Block[];
 }
@@ -68,8 +75,8 @@ export interface SortState {
 /** Walk-tree nodes we are willing to build per vertex, which caps the depth. */
 const KEY_BUDGET = 8000;
 
-/** Hard ceiling on the depth, so a sparse graph cannot run away either. */
-const DEPTH_CEILING = 6;
+/** Hard ceiling on the depth. */
+const DEPTH_CEILING = 8;
 
 function neighboursOf(adjacency: readonly (readonly boolean[])[]): number[][] {
     const n = adjacency.length;
@@ -85,31 +92,32 @@ function neighboursOf(adjacency: readonly (readonly boolean[])[]): number[][] {
 /**
  * Canonical description of the depth-`depth` walk tree rooted at `vertex`.
  *
- * `path` holds the vertices from the root down to the current one, so a branch
- * that lands on an ancestor is written `^k` — `k` steps up. Everything else is a
- * nested list of children, sorted, which makes the string independent of the
- * input numbering.
+ * Every node is written `p<position>` followed, when it has children, by them
+ * between parentheses. `path` holds the vertices from the root down to the
+ * current one, so a branch landing on an ancestor is written `^<steps>@<position>`.
  */
 export function treeKey(
     neighbours: readonly (readonly number[])[],
+    positions: readonly number[],
     vertex: number,
     depth: number,
     path: number[] = [],
 ): string {
-    if (depth === 0) return ".";
+    const label = `p${positions[vertex]}`;
+    if (depth === 0) return label;
 
     path.push(vertex);
     const children: string[] = [];
 
     for (const next of neighbours[vertex]) {
         const seen = path.lastIndexOf(next);
-        if (seen >= 0) children.push(`^${path.length - seen}`);
-        else children.push(treeKey(neighbours, next, depth - 1, path));
+        if (seen >= 0) children.push(`^${path.length - seen}@${positions[next]}`);
+        else children.push(treeKey(neighbours, positions, next, depth - 1, path));
     }
 
     path.pop();
     children.sort();
-    return `(${children.join("")})`;
+    return `${label}(${children.join("")})`;
 }
 
 /** Two vertices are interchangeable when swapping them changes no other edge. */
@@ -148,8 +156,8 @@ export function depthBudget(adjacency: readonly (readonly boolean[])[]): number 
     return Math.max(1, Math.min(DEPTH_CEILING, affordable));
 }
 
+/** Highest key first: at depth 1 that is the highest degree first. */
 function groupByKey(
-    adjacency: readonly (readonly boolean[])[],
     keys: ReadonlyMap<number, string>,
     vertices: readonly number[],
 ): Array<[string, number[]]> {
@@ -161,7 +169,6 @@ function groupByKey(
         else bucket.push(vertex);
     }
 
-    // Highest key first: at depth 1 that is the highest degree first.
     return [...buckets.entries()].sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0));
 }
 
@@ -173,9 +180,12 @@ function groupByKey(
 export function firstPass(adjacency: readonly (readonly boolean[])[]): SortState {
     const n = adjacency.length;
     const neighbours = neighboursOf(adjacency);
+    const nothing = new Array<number>(n).fill(0);
 
     const keys = new Map<number, string>();
-    for (let vertex = 0; vertex < n; vertex++) keys.set(vertex, treeKey(neighbours, vertex, 1));
+    for (let vertex = 0; vertex < n; vertex++) {
+        keys.set(vertex, treeKey(neighbours, nothing, vertex, 1));
+    }
 
     const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => {
         const ka = keys.get(a) as string;
@@ -212,11 +222,12 @@ export function firstPass(adjacency: readonly (readonly boolean[])[]): SortState
 }
 
 /**
- * One advance: refine the first group that is neither a singleton nor a twin
- * set, using walk trees one ring deeper than the previous pass.
+ * One advance on the first group that is neither a singleton nor a twin set.
  *
- * The children keep the parent's slot, so the order is subdivided in place and
- * never re-sorted across groups.
+ * The key is the walk tree at a depth one ring deeper than the previous pass,
+ * with every node carrying its group's position. If that separates nothing, the
+ * pass pins the group's first member instead: from then on that vertex is a
+ * position of its own, and the next pass can tell its neighbours from the rest.
  */
 export function advance(
     state: SortState,
@@ -231,12 +242,32 @@ export function advance(
     const depth = previous.pass + 1;
     if (depth > state.maxDepth) return state;
 
+    const n = adjacency.length;
+    const positions = new Array<number>(n).fill(0);
+    for (const block of previous.blocks) {
+        for (const vertex of block.members) positions[vertex] = block.start;
+    }
+
     const neighbours = neighboursOf(adjacency);
     const keys = new Map<number, string>();
-    for (const vertex of target.members) keys.set(vertex, treeKey(neighbours, vertex, depth));
+    for (const vertex of target.members) {
+        keys.set(vertex, treeKey(neighbours, positions, vertex, depth));
+    }
 
-    const children = groupByKey(adjacency, keys, target.members);
-    const split = children.length > 1;
+    const byKey = groupByKey(keys, target.members);
+    const groups: Array<{ key?: string; members: number[] }> = [];
+    let pinned: number | undefined;
+    let criterion = `walk trees ${depth} rings deep`;
+
+    if (byKey.length > 1) {
+        for (const [key, members] of byKey) groups.push({ key, members });
+    } else {
+        const first = target.members[0];
+        pinned = first;
+        criterion = "the first vertex, pinned";
+        groups.push({ members: [first] });
+        groups.push({ key: byKey[0][0], members: target.members.slice(1) });
+    }
 
     const blocks: Block[] = [];
     let position = 1;
@@ -247,16 +278,17 @@ export function advance(
             continue;
         }
 
-        for (const [key, members] of children) {
+        for (const group of groups) {
             blocks.push({
                 start: position,
                 degree: block.degree,
-                members,
-                key,
-                fresh: split,
-                twins: members.length > 1 ? allTwins(adjacency, members) : undefined,
+                members: group.members,
+                key: group.key,
+                fresh: true,
+                twins:
+                    group.members.length > 1 ? allTwins(adjacency, group.members) : undefined,
             });
-            position += members.length;
+            position += group.members.length;
         }
     }
 
@@ -268,10 +300,10 @@ export function advance(
             {
                 pass: previous.pass + 1,
                 depth,
-                criterion: `walk trees ${depth} rings deep`,
+                criterion,
                 target: target.start,
                 targetSize: target.members.length,
-                split,
+                pinned,
                 blocks,
             },
         ],

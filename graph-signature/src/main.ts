@@ -133,9 +133,6 @@ function blockRow(block: Block): string {
 /** What a pass did to the group it worked on: one line per new group, then the order. */
 function outcomeOf(pass: PassLog): string {
     if (pass.target === undefined) return "";
-    if (pass.split === false) {
-        return `<p class="s2-pass-note">→ nothing moved at depth ${pass.depth}</p>`;
-    }
 
     const fresh = pass.blocks.filter((block) => block.fresh);
 
@@ -168,6 +165,7 @@ function renderSignature(state: SortState): void {
         (block) => block.members.length > 1 && block.twins === true,
     ).length;
     const tied = groups - frozen - twins;
+    const pinned = state.log.some((pass) => pass.pinned !== undefined);
     const ambiguous = tied;
 
     let red = 0;
@@ -191,13 +189,15 @@ function renderSignature(state: SortState): void {
 
     const note = document.getElementById("graph6-note");
     if (note) {
-        note.className = ambiguous === 0 ? "mt-2 stat" : "mt-2 text-[11.5px] text-accent";
-        note.textContent =
-            ambiguous === 0
-                ? "canonical — every group is a single vertex or a set of twins, so this order is the same for every graph isomorphic to this one"
-                : `provisional — ${ambiguous} ${
-                      ambiguous === 1 ? "group still has" : "groups still have"
-                  } an arbitrary order inside, so this string moves with the labelling`;
+        const canonical = ambiguous === 0 && !pinned;
+        note.className = canonical ? "mt-2 stat" : "mt-2 text-[11.5px] text-accent";
+        note.textContent = canonical
+            ? "canonical — every group is a single vertex or a set of twins, so this order is the same for every graph isomorphic to this one"
+            : pinned
+              ? "provisional — a vertex was pinned using the input order, so this string moves with the labelling"
+              : `provisional — ${ambiguous} ${
+                    ambiguous === 1 ? "group still has" : "groups still have"
+                } an arbitrary order inside, so this string moves with the labelling`;
     }
 
     const log = document.getElementById("s2-log");
@@ -205,15 +205,15 @@ function renderSignature(state: SortState): void {
         log.innerHTML = state.log
             .map((pass) => {
                 const detail =
-                    pass.target === undefined
-                        ? `depth ${pass.depth} — ${pass.criterion}`
-                        : `depth ${pass.depth} — refine #${pass.target}${
-                              pass.targetSize !== undefined && pass.targetSize > 1
-                                  ? `–#${pass.target + pass.targetSize - 1}`
-                                  : ""
-                          }, keyed by ${pass.criterion}${
-                              pass.split === false ? " · nothing split" : ""
-                          }`;
+                    pass.pinned !== undefined
+                        ? `depth ${pass.depth} — pin ${label(pass.pinned)} out of #${pass.target}`
+                        : pass.target === undefined
+                          ? `depth ${pass.depth} — ${pass.criterion}`
+                          : `depth ${pass.depth} — refine #${pass.target}${
+                                pass.targetSize !== undefined && pass.targetSize > 1
+                                    ? `–#${pass.target + pass.targetSize - 1}`
+                                    : ""
+                            }, keyed by ${pass.criterion}`;
 
                 return (
                     `<div class="s2-pass">` +

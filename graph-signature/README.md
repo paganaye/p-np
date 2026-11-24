@@ -49,10 +49,13 @@ square's does not.
 
 - **Pass 1** looks one ring deep — that is the red degree, highest first.
 - **Pass `p`** refines the first *tied* group (one that is neither a singleton nor
-  a set of twins), keying each member by its walk tree `p` rings deep. Members
-  sharing a key stay together, the others split. The children take the parent's
-  slot, so the order is subdivided in place and never re-sorted across groups.
-- A group that does not split at depth `p` is retried at depth `p + 1`.
+  a set of twins), keying each member by its walk tree `p` rings deep. Every node
+  of that tree also carries the position of its group, so a pinned vertex counts
+  for its neighbours. Members sharing a key stay together, the others split; the
+  children take the parent's slot, so the order is subdivided in place.
+- When the keys separate nothing, the pass **pins** the first member instead: it
+  becomes a group of one. The next pass then sees it as a position of its own,
+  and the vertices next to it stand out from the rest.
 - A group of one is **frozen** — nothing can move that vertex across another
   group.
 - A group whose members are pairwise **twins** (a swap exchanges them without
@@ -75,10 +78,11 @@ group cannot change the matrix, so `graph6 canonical` is identical for every
 isomorphic copy.
 
 Otherwise the order inside a tied group is the input order and the string is
-flagged *provisional*. That is the known ceiling: `K18` minus a perfect matching
-is vertex-transitive with no twins, so no invariant and no depth can order it —
-only individualization (pin a vertex, refine, and keep the smallest certificate
-over the choices) would.
+flagged *provisional*. The pin makes this visible: it takes the group's **first**
+member, and "first" is the input order, so two labelled copies can pin different
+vertices. Making that canonical means trying every member of the group and
+keeping the smallest graph6 — the next step, and the same price nauty pays with
+individualization.
 
 The **Shuffle labels** button renumbers the vertices without adding or removing a
 single edge: `graph6 input` moves, `graph6 canonical` must not. It is a one-click

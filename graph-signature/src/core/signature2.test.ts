@@ -131,24 +131,35 @@ function neighboursOf(matrix: Matrix): number[][] {
 // ------------------------------------------------------------------ tests ---
 
 describe("the walk tree", () => {
+    const noPositions = (n: number) => new Array<number>(n).fill(0);
+
     it("separates a triangle from a square at depth 3", () => {
         const triangle = neighboursOf(cycle(3));
         const square = neighboursOf(cycle(4));
 
-        expect(treeKey(triangle, 0, 2)).toBe(treeKey(square, 0, 2));
-        expect(treeKey(triangle, 0, 3)).not.toBe(treeKey(square, 0, 3));
+        expect(treeKey(triangle, noPositions(3), 0, 2)).toBe(treeKey(square, noPositions(4), 0, 2));
+        expect(treeKey(triangle, noPositions(3), 0, 3)).not.toBe(
+            treeKey(square, noPositions(4), 0, 3),
+        );
     });
 
     it("marks the return with the distance it took", () => {
         const triangle = neighboursOf(cycle(3));
-        expect(treeKey(triangle, 0, 3)).toContain("^3");
-        expect(treeKey(triangle, 0, 2)).not.toContain("^3");
+        expect(treeKey(triangle, noPositions(3), 0, 3)).toContain("^3@");
+        expect(treeKey(triangle, noPositions(3), 0, 2)).not.toContain("^3@");
     });
 
     it("is the degree at depth 1", () => {
         const p5 = neighboursOf(path(5));
-        expect(treeKey(p5, 0, 1)).toBe("(.)");
-        expect(treeKey(p5, 2, 1)).toBe("(..)");
+        expect(treeKey(p5, noPositions(5), 0, 1)).toBe("p0(p0)");
+        expect(treeKey(p5, noPositions(5), 2, 1)).toBe("p0(p0p0)");
+    });
+
+    it("carries the position of each node", () => {
+        const p5 = neighboursOf(path(5));
+        const positions = [0, 1, 1, 1, 0];
+        expect(treeKey(p5, positions, 1, 1)).toContain("p0");
+        expect(treeKey(p5, positions, 1, 1)).toContain("p1");
     });
 });
 
@@ -183,8 +194,26 @@ describe("the sort", () => {
         const pass = advance(firstPass(matrix), matrix).log[1];
 
         expect(pass.target).toBe(1);
-        expect(pass.split).toBe(true);
+        expect(pass.pinned).toBeUndefined();
         expect(pass.blocks.map((block) => block.members)).toEqual([[2], [1, 3], [0, 4]]);
+    });
+
+    it("pins instead of splitting when the keys agree", () => {
+        const matrix = addEdges(emptyGraph(18), [
+            [0, 1],
+            [2, 3],
+        ]);
+        const first = firstPass(matrix);
+        expect(first.log[0].blocks[0].members).toEqual([0, 1, 2, 3]);
+
+        const second = advance(first, matrix);
+        expect(second.log[1].pinned).toBe(0);
+        expect(second.log[1].blocks[0].members).toEqual([0]);
+
+        const third = advance(second, matrix);
+        const groups = third.log[2].blocks.map((block) => block.members);
+        expect(groups[0]).toEqual([0]);
+        expect(groups.find((members) => members.includes(1))).toEqual([1]);
     });
 
     it("separates the triangle from the square", () => {
@@ -195,11 +224,14 @@ describe("the sort", () => {
         expect(state.log.length).toBeGreaterThanOrEqual(3);
     });
 
-    it("keeps the profile invariant under relabelling", () => {
-        const shapes = [path(6), cycle(7), randomGraph(10, 3), disjoint(cycle(3), cycle(4))];
+    it("keeps the profile invariant under relabelling when nothing was pinned", () => {
+        const shapes = [path(6), randomGraph(10, 3), randomGraph(12, 5)];
 
         for (const matrix of shapes) {
-            const expected = profileOf(runAll(matrix));
+            const state = runAll(matrix);
+            if (state.log.some((pass) => pass.pinned !== undefined)) continue;
+
+            const expected = profileOf(state);
             const random = mulberry32(11);
 
             for (let round = 0; round < 12; round++) {
