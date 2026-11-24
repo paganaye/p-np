@@ -1,6 +1,8 @@
 import { computeSignature } from "./core/signature.ts";
+import { computeSignature2 } from "./core/signature2.ts";
 import { fromGraph6, toGraph6 } from "./core/graph6.ts";
 import type { SignatureResult } from "./core/signature.ts";
+import type { Signature2Result } from "./core/signature2.ts";
 import { GraphView } from "./ui/graphView.ts";
 
 const MIN_NODES = 3;
@@ -116,22 +118,49 @@ function renderPanel(result: SignatureResult): void {
             sig.textContent = "— (the signature exploded: the colouring is too symmetric)";
             text("sig-count", "");
         } else {
-            const json = JSON.stringify(result.entries, null, 2);
-            const truncated = json.length > JSON_LIMIT;
-            let shown = json;
-            if (truncated) {
-                const cut = json.lastIndexOf("\n", JSON_LIMIT);
-                shown = `${json.slice(0, cut > 0 ? cut : JSON_LIMIT)}\n… (truncated)`;
-            }
-            sig.innerHTML = highlightJson(shown);
-            text("sig-count", `${result.entries.length} entries${truncated ? " · truncated" : ""}`);
+            const length = renderJson("sig", result.entries);
+            text(
+                "sig-count",
+                `${result.entries.length} entries${length > JSON_LIMIT ? " · truncated" : ""}`,
+            );
         }
     }
+}
+
+function renderJson(id: string, value: unknown): number {
+    const element = document.getElementById(id);
+    const json = JSON.stringify(value, null, 2);
+    if (element) {
+        let shown = json;
+        if (json.length > JSON_LIMIT) {
+            const cut = json.lastIndexOf("\n", JSON_LIMIT);
+            shown = `${json.slice(0, cut > 0 ? cut : JSON_LIMIT)}\n… (truncated)`;
+        }
+        element.innerHTML = highlightJson(shown);
+    }
+    return json.length;
+}
+
+function renderSignature2(result: Signature2Result): void {
+    const classes = result.classes.length;
+    const passes = result.passes.length - 1;
+    text(
+        "sig2-status",
+        `${classes} ${classes === 1 ? "class" : "classes"} · ${passes} ${
+            passes === 1 ? "pass" : "passes"
+        } · ${result.stable ? "fixed point" : "pass limit"}`,
+    );
+
+    renderJson("sig2", {
+        stable: result.stable,
+        passes: result.passes,
+    });
 }
 
 function refresh(): void {
     view?.render(adjacency);
     renderPanel(computeSignature(adjacency));
+    renderSignature2(computeSignature2(adjacency));
 }
 
 function toggle(i: number, j: number): void {
