@@ -112,9 +112,9 @@
 
 .s2-row {
     display: grid;
-    grid-template-columns: 76px 72px minmax(0, 1fr) minmax(0, 240px) 64px;
+    grid-template-columns: 76px 72px minmax(0, 0.8fr) minmax(0, 1.2fr) 64px;
     gap: 12px;
-    align-items: baseline;
+    align-items: start;
     padding: 5px 9px;
     border: 1px solid var(--color-line);
     border-radius: 4px;
@@ -124,16 +124,28 @@
 .s2-key {
     color: var(--color-muted);
     font-size: 10.5px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1.5;
+    white-space: normal;
+    overflow-wrap: anywhere;
     cursor: help;
+}
+
+.s2-ring {
+    display: flex;
+    gap: 6px;
+}
+
+.s2-ring-tag {
+    flex: none;
+    color: var(--color-accent);
+    font-variant-numeric: tabular-nums;
 }
 
 .s2-rank {
     color: var(--color-ink);
     font-size: 11.5px;
 }
+
 
 .s2-degree {
     color: var(--color-accent);

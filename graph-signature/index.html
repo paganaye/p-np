@@ -128,6 +128,13 @@
                     member is tried in turn and the smallest graph6 wins — a comparison, not a choice.
                     The <code>A…R</code> labels never enter a key; they only make the log readable.
                 </p>
+                <p class="mt-2 max-w-3xl text-[12px] leading-relaxed text-muted">
+                    Read a key one ring at a time. <code>r1 · 8 at #2 · 28 inside · 8 back</code>
+                    means: ring 1 holds 8 vertices, all of them in group #2 (the group is the
+                    numbered block at the left of the row); 28 edges run between those 8 vertices;
+                    8 edges run back to the ring closer to the pinned vertex. Keys are compared by
+                    degree first, then ring by ring, stopping at the first ring that disagrees.
+                </p>
                 <div id="s2-log" class="s2-log mt-5"></div>
             </div>
         </section>

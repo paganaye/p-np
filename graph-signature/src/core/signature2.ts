@@ -60,6 +60,8 @@ export interface PassLog {
     pinned?: number;
     /** False when the keys separated nothing at this depth. */
     split?: boolean;
+    /** The key every member carried, set only when the rings separated nothing. */
+    sameKey?: string;
     /** The groups, in order, after this pass. */
     blocks: Block[];
 }
@@ -416,6 +418,9 @@ export function advance(
     const byKey = groupByKey(keys, target.members);
 
     if (byKey.length === 1) {
+        // Nothing separated, but every member now carries the same key: keep it on
+        // the snapshot, so the log can show what the ring looked like.
+        const [shared] = byKey[0];
         return {
             order: state.order,
             maxDepth: state.maxDepth,
@@ -427,6 +432,7 @@ export function advance(
                     criterion: `rings ${depth} — nothing separated`,
                     target: target.start,
                     targetSize: target.members.length,
+                    sameKey: shared,
                     split: false,
                     blocks: previous.blocks.map((block) => ({ ...block, fresh: false })),
                 },

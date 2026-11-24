@@ -112,14 +112,20 @@ function reordered(adjacency: boolean[][], order: readonly number[]): boolean[][
     return order.map((i) => order.map((j) => adjacency[i][j]));
 }
 
-function blockRow(block: Block): string {
+/** Where a group sits: `#4` for one vertex, `#2–#10` for several. */
+function blockRange(block: Block): string {
     const start = block.start;
     const end = start + block.members.length - 1;
-    const range = start === end ? `#${start}` : `#${start}–#${end}`;
+    return start === end ? `#${start}` : `#${start}–#${end}`;
+}
+
+/** One line of the partition: range, degree, members, key, state. */
+function blockRow(block: Block): string {
+    const range = blockRange(block);
     const state =
         block.members.length === 1 ? "frozen" : block.twins === true ? "twins" : "tied";
     const full = block.key ?? "";
-    const short = full === "" ? "—" : shortKey(full);
+    const words = full === "" ? "—" : keyLines(full);
 
     return (
         `<div class="s2-row${block.fresh ? " s2-row--fresh" : ""}">` +
@@ -128,40 +134,90 @@ function blockRow(block: Block): string {
         `<span class="s2-members">${block.members
             .map(label)
             .join(" ")}</span>` +
-        `<span class="s2-key" title="${full}">${short}</span>` +
+        `<div class="s2-key" title="${full}">${words}</div>` +
         `<span class="s2-state s2-state--${state}">${state}</span>` +
         `</div>`
     );
 }
 
-/** What a pass did to the group it worked on: one line per new group, then the order. */
-function outcomeOf(pass: PassLog): string {
+/**
+ * What the pass settled on: the groups it produced, in order, joined by `<` when
+ * they came from one group. The rows above already give the members and the keys,
+ * so this line keeps only the verdict.
+ */
+function verdictOf(pass: PassLog): string {
     if (pass.target === undefined) return "";
     if (pass.split === false) {
-        return `<p class="s2-pass-note">→ nothing moved at ring ${pass.depth}, going one ring out</p>`;
+        const measured =
+            pass.sameKey === undefined
+                ? ""
+                : ` (all ${pass.targetSize ?? "?"} carry ${keyText(pass.sameKey)})`;
+        return `<p class="s2-pass-note">→ nothing moved at ring ${pass.depth}${measured}, going one ring out</p>`;
     }
 
     const fresh = pass.blocks.filter((block) => block.fresh);
-
-    const rows = fresh
-        .map((block) => {
-            const end = block.start + block.members.length - 1;
-            const range = block.start === end ? `#${block.start}` : `#${block.start}–#${end}`;
-            const key = block.key === undefined ? "" : ` ${shortKey(block.key)}`;
-            return `<div class="s2-outcome-row">${range} ${block.members
-                .map(label)
-                .join(" ")}${key}</div>`;
-        })
-        .join("");
-
     const order = fresh.map((block) => block.members.map(label).join("+")).join(" < ");
 
-    return `<div class="s2-outcome">${rows}<div class="s2-outcome-order">${order}</div></div>`;
+    return `<div class="s2-outcome"><div class="s2-outcome-order">${order}</div></div>`;
 }
 
-/** Keys are ring summaries; the panel only shows the head of the string. */
-function shortKey(key: string): string {
-    return key.length <= 22 ? key : `${key.slice(0, 21)}…`;
+/**
+ * A ring section (`positions|inside|back`) in words. The positions are run-length
+ * compressed, so `2.2.2.2.2.2.2.2|28|8` reads « 8 at #2 · 28 inside · 8 back »:
+ * eight ring vertices, all sitting in group #2, with 28 edges among them and 8
+ * edges back to the previous ring.
+ */
+function ringWords(section: string): string {
+    if (section === "—") return "—";
+
+    const [positions = "", inside = "0", back = "0"] = section.split("|");
+    const runs: { group: number; count: number }[] = [];
+
+    for (const raw of positions.split(".")) {
+        if (raw === "") continue;
+        const group = Number(raw);
+        const last = runs[runs.length - 1];
+        if (last !== undefined && last.group === group) last.count += 1;
+        else runs.push({ group, count: 1 });
+    }
+
+    const where =
+        runs.length === 0
+            ? "no neighbour"
+            : runs.map(({ group, count }) => `${count} at #${group}`).join(", ");
+
+    // The two extremes are what the eye needs: a ring that is a clique, or one with
+    // no edge inside it. Everything else stays a count.
+    const size = runs.reduce((sum, run) => sum + run.count, 0);
+    const edges = Number(inside);
+    const shape =
+        size > 1 && edges === (size * (size - 1)) / 2
+            ? " (complete)"
+            : size > 1 && edges === 0
+              ? " (independent)"
+              : "";
+
+    return `${where} · ${inside} inside${shape} · ${back} back`;
+}
+
+/** The key as one line, for the places that have no room for a block. */
+function keyText(key: string): string {
+    const [, ...rings] = key.split(";");
+    if (rings.length === 0) return "degree only";
+    return rings.map((section, index) => `r${index + 1} ${ringWords(section)}`).join(" · ");
+}
+
+/** The same, one line per ring, for the log grid. */
+function keyLines(key: string): string {
+    const [, ...rings] = key.split(";");
+    if (rings.length === 0) return "degree only";
+    return rings
+        .map(
+            (section, index) =>
+                `<div class="s2-ring"><span class="s2-ring-tag">r${index + 1}</span>` +
+                `<span>${ringWords(section)}</span></div>`,
+        )
+        .join("");
 }
 
 function renderSignature(result: SearchResult, failure: string | null): void {
@@ -214,6 +270,7 @@ function renderSignature(result: SearchResult, failure: string | null): void {
     if (log) {
         log.innerHTML = state.log
             .map((pass) => {
+                const produced = pass.blocks.filter((block) => block.fresh).length;
                 const detail =
                     pass.pinned !== undefined
                         ? `out of rings — pin ${label(pass.pinned)} out of #${pass.target ?? "?"}`
@@ -225,14 +282,14 @@ function renderSignature(result: SearchResult, failure: string | null): void {
                                   pass.targetSize !== undefined && pass.targetSize > 1
                                       ? `–#${(pass.target ?? 0) + pass.targetSize - 1}`
                                       : ""
-                              }`;
+                              } → ${produced} keys`;
 
                 return (
                     `<div class="s2-pass">` +
                     `<h3 class="s2-pass-title">Pass ${pass.pass}</h3>` +
                     `<p class="s2-pass-head">${detail}</p>` +
-                    outcomeOf(pass) +
                     `<div class="s2-rows">${pass.blocks.map(blockRow).join("")}</div>` +
+                    verdictOf(pass) +
                     `</div>`
                 );
             })
@@ -362,7 +419,7 @@ function renderComparison(): void {
     const where =
         first?.firstPosition === undefined
             ? ""
-            : ` (position #${first.firstPosition.left} vs #${first.firstPosition.right})`;
+            : ` (group #${first.firstPosition.left} vs #${first.firstPosition.right})`;
 
     const verdict = result.equal
         ? `equal down to ring ${result.rings.length - 1} — nothing separates ${label(a)} from ${label(b)} at this depth`
@@ -373,8 +430,8 @@ function renderComparison(): void {
             (ring) =>
                 `<div class="cmp-row${ring.equal ? "" : " cmp-row--diff"}">` +
                 `<span class="cmp-ring">ring ${ring.ring}</span>` +
-                `<code>${label(a)} ${ring.left}</code>` +
-                `<code>${label(b)} ${ring.right}</code>` +
+                `<code>${label(a)} ${ringWords(ring.left)}</code>` +
+                `<code>${label(b)} ${ringWords(ring.right)}</code>` +
                 `<span class="cmp-mark">${ring.equal ? "=" : "≠"}</span>` +
                 `</div>`,
         )
