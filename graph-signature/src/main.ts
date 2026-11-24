@@ -1,6 +1,6 @@
-import { advance, firstPass } from "./core/signature2.ts";
+import { solve } from "./core/signature2.ts";
 import { fromGraph6, toGraph6 } from "./core/graph6.ts";
-import type { Block, PassLog, SortState } from "./core/signature2.ts";
+import type { Block, PassLog, SearchResult, SortState } from "./core/signature2.ts";
 import { GraphView } from "./ui/graphView.ts";
 
 const MIN_NODES = 3;
@@ -133,6 +133,9 @@ function blockRow(block: Block): string {
 /** What a pass did to the group it worked on: one line per new group, then the order. */
 function outcomeOf(pass: PassLog): string {
     if (pass.target === undefined) return "";
+    if (pass.split === false) {
+        return `<p class="s2-pass-note">→ nothing moved at depth ${pass.depth}, going deeper</p>`;
+    }
 
     const fresh = pass.blocks.filter((block) => block.fresh);
 
@@ -157,7 +160,8 @@ function shortKey(key: string): string {
     return key.length <= 22 ? key : `${key.slice(0, 21)}…`;
 }
 
-function renderSignature(state: SortState): void {
+function renderSignature(result: SearchResult): void {
+    const state = result.state;
     const last = state.log[state.log.length - 1];
     const groups = last.blocks.length;
     const frozen = last.blocks.filter((block) => block.members.length === 1).length;
@@ -165,7 +169,6 @@ function renderSignature(state: SortState): void {
         (block) => block.members.length > 1 && block.twins === true,
     ).length;
     const tied = groups - frozen - twins;
-    const pinned = state.log.some((pass) => pass.pinned !== undefined);
     const ambiguous = tied;
 
     let red = 0;
@@ -189,12 +192,12 @@ function renderSignature(state: SortState): void {
 
     const note = document.getElementById("graph6-note");
     if (note) {
-        const canonical = ambiguous === 0 && !pinned;
+        const canonical = ambiguous === 0 && !result.truncated;
         note.className = canonical ? "mt-2 stat" : "mt-2 text-[11.5px] text-accent";
         note.textContent = canonical
-            ? "canonical — every group is a single vertex or a set of twins, so this order is the same for every graph isomorphic to this one"
-            : pinned
-              ? "provisional — a vertex was pinned using the input order, so this string moves with the labelling"
+            ? "canonical — every group is a single vertex or a set of twins, and the pinned branches were compared, so this string is the same for every graph isomorphic to this one"
+            : result.truncated
+              ? "provisional — the branch budget ran out before every pinning was compared"
               : `provisional — ${ambiguous} ${
                     ambiguous === 1 ? "group still has" : "groups still have"
                 } an arbitrary order inside, so this string moves with the labelling`;
@@ -206,14 +209,16 @@ function renderSignature(state: SortState): void {
             .map((pass) => {
                 const detail =
                     pass.pinned !== undefined
-                        ? `depth ${pass.depth} — pin ${label(pass.pinned)} out of #${pass.target}`
-                        : pass.target === undefined
-                          ? `depth ${pass.depth} — ${pass.criterion}`
-                          : `depth ${pass.depth} — refine #${pass.target}${
-                                pass.targetSize !== undefined && pass.targetSize > 1
-                                    ? `–#${pass.target + pass.targetSize - 1}`
-                                    : ""
-                            }, keyed by ${pass.criterion}`;
+                        ? `out of depth — pin ${label(pass.pinned)} out of #${pass.target}`
+                        : pass.split === false
+                          ? `depth ${pass.depth} — nothing separated`
+                          : pass.target === undefined
+                            ? `depth ${pass.depth} — ${pass.criterion}`
+                            : `depth ${pass.depth} — refine #${pass.target}${
+                                  pass.targetSize !== undefined && pass.targetSize > 1
+                                      ? `–#${pass.target + pass.targetSize - 1}`
+                                      : ""
+                              }, keyed by ${pass.criterion}`;
 
                 return (
                     `<div class="s2-pass">` +
@@ -299,28 +304,10 @@ function renderEdges(state: SortState): void {
     text("edges", lines.join("\n"));
 }
 
-/**
- * Runs the sort until it has nothing left to do: every group frozen or a set of
- * twins, or the depth budget exhausted. `advance` hands back the very same state
- * when no group is left to refine, which is the signal to stop.
- */
-function sortedState(matrix: boolean[][]): SortState {
-    let state = firstPass(matrix);
-    const cap = 2 * matrix.length;
-
-    for (let pass = 2; pass <= cap; pass++) {
-        const next = advance(state, matrix);
-        if (next === state) break;
-        state = next;
-    }
-
-    return state;
-}
-
 function refresh(): void {
     view?.render(adjacency);
     remember();
-    renderSignature(sortedState(adjacency));
+    renderSignature(solve(adjacency));
 }
 
 function toggle(i: number, j: number): void {

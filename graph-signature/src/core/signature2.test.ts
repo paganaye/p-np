@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advance, areTwins, depthBudget, firstPass, treeKey } from "./signature2.ts";
+import { advance, areTwins, depthBudget, firstPass, solve, treeKey } from "./signature2.ts";
 import type { SortState } from "./signature2.ts";
 
 type Matrix = boolean[][];
@@ -103,7 +103,7 @@ function permute(matrix: Matrix, permutation: readonly number[]): Matrix {
 
 function runAll(matrix: Matrix): SortState {
     let state = firstPass(matrix);
-    for (let pass = 0; pass < 20; pass++) {
+    for (let pass = 0; pass < 60; pass++) {
         const next = advance(state, matrix);
         if (next === state) break;
         state = next;
@@ -198,22 +198,111 @@ describe("the sort", () => {
         expect(pass.blocks.map((block) => block.members)).toEqual([[2], [1, 3], [0, 4]]);
     });
 
-    it("pins instead of splitting when the keys agree", () => {
+    it("does not pin while there is still depth to try", () => {
         const matrix = addEdges(emptyGraph(18), [
             [0, 1],
             [2, 3],
         ]);
-        const first = firstPass(matrix);
-        expect(first.log[0].blocks[0].members).toEqual([0, 1, 2, 3]);
 
-        const second = advance(first, matrix);
-        expect(second.log[1].pinned).toBe(0);
-        expect(second.log[1].blocks[0].members).toEqual([0]);
+        const second = advance(firstPass(matrix), matrix);
+        expect(second.log[1].split).toBe(false);
+        expect(second.log[1].pinned).toBeUndefined();
+    });
 
-        const third = advance(second, matrix);
-        const groups = third.log[2].blocks.map((block) => block.members);
-        expect(groups[0]).toEqual([0]);
-        expect(groups.find((members) => members.includes(1))).toEqual([1]);
+    /*
+     * Two disjoint edges: the four endpoints are interchangeable, no depth will
+     * ever separate them, so the search pins each in turn and keeps the smallest
+     * string. All four branches agree here, which is exactly why shuffling the
+     * labels cannot change the answer.
+     */
+    it("pins every member of a hopeless group and keeps the smallest string", () => {
+        const matrix = addEdges(emptyGraph(18), [
+            [0, 1],
+            [2, 3],
+        ]);
+
+        const result = solve(matrix);
+        expect(result.truncated).toBe(false);
+        expect(result.state.log.some((pass) => pass.pinned !== undefined)).toBe(true);
+
+        const last = result.state.log[result.state.log.length - 1];
+        expect(
+            last.blocks.every((block) => block.members.length === 1 || block.twins === true),
+        ).toBe(true);
+    });
+
+    it("gives the same string for every relabelling of two edges", () => {
+        const matrix = addEdges(emptyGraph(18), [
+            [0, 1],
+            [2, 3],
+        ]);
+
+        const expected = solve(matrix).key;
+        const random = mulberry32(5);
+
+        for (let round = 0; round < 10; round++) {
+            const permuted = permute(matrix, shuffle(matrix.length, random));
+            expect(solve(permuted).key).toBe(expected);
+        }
+    });
+
+    /*
+     * A square and a triangle with **no vertex in common**: all seven vertices
+     * have degree 2, so depth 2 sees a single group. Depth 3 is what separates
+     * them — the triangle's tree shows a ^3 return, the square's does not.
+     */
+    it("separates a disjoint square from a disjoint triangle", () => {
+        const matrix = addEdges(emptyGraph(18), [
+            [0, 1],
+            [1, 2],
+            [2, 3],
+            [3, 0],
+            [4, 5],
+            [5, 6],
+            [6, 4],
+        ]);
+
+        const state = runAll(matrix);
+
+        expect(state.log.some((pass) => pass.split === false)).toBe(true);
+        expect(groupOf(state, 0)).not.toBe(groupOf(state, 4));
+    });
+
+    /*
+     * The figure: a square A-B-C-D and a triangle D-E-F sharing the vertex D,
+     * plus twelve isolated vertices.
+     *
+     *   degrees   D = 4, others 2, isolated 0
+     *   pass 2    B separates (it is the only one of the five not next to D)
+     *   pass 3    the square's A, C separate from the triangle's E, F
+     *   left      {A, C} and {E, F} are twins, the isolated are twins
+     *
+     * No pin is needed anywhere: everything is settled by the keys.
+     */
+    it("sorts a square and a triangle sharing a vertex, with no pin", () => {
+        const matrix = addEdges(emptyGraph(18), [
+            [0, 1],
+            [1, 2],
+            [2, 3],
+            [3, 0],
+            [3, 4],
+            [4, 5],
+            [5, 3],
+        ]);
+
+        const state = runAll(matrix);
+        const blocks = state.log[state.log.length - 1].blocks;
+
+        expect(state.log.some((pass) => pass.pinned !== undefined)).toBe(false);
+        expect(blocks.map((block) => block.members)).toEqual([
+            [3],
+            [1],
+            [0, 2],
+            [4, 5],
+            [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+        ]);
+        expect(blocks.filter((block) => block.members.length === 1)).toHaveLength(2);
+        expect(blocks.filter((block) => block.twins === true)).toHaveLength(3);
     });
 
     it("separates the triangle from the square", () => {

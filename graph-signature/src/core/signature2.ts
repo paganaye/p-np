@@ -1,3 +1,5 @@
+import { toGraph6 } from "./graph6.ts";
+
 /**
  * Signature 2 — sorting the vertices, one pass at a time.
  *
@@ -59,6 +61,8 @@ export interface PassLog {
     targetSize?: number;
     /** Set when the pass pinned a vertex instead of splitting on keys. */
     pinned?: number;
+    /** False when the keys separated nothing at this depth. */
+    split?: boolean;
     /** The groups, in order, after this pass. */
     blocks: Block[];
 }
@@ -239,7 +243,9 @@ export function advance(
     );
     if (target === undefined) return state;
 
-    const depth = previous.pass + 1;
+    // One ring deeper than the previous pass. When the depth budget is spent,
+    // stop: the search above takes over and pins a vertex.
+    const depth = previous.depth + 1;
     if (depth > state.maxDepth) return state;
 
     const n = adjacency.length;
@@ -255,18 +261,25 @@ export function advance(
     }
 
     const byKey = groupByKey(keys, target.members);
-    const groups: Array<{ key?: string; members: number[] }> = [];
-    let pinned: number | undefined;
-    let criterion = `walk trees ${depth} rings deep`;
 
-    if (byKey.length > 1) {
-        for (const [key, members] of byKey) groups.push({ key, members });
-    } else {
-        const first = target.members[0];
-        pinned = first;
-        criterion = "the first vertex, pinned";
-        groups.push({ members: [first] });
-        groups.push({ key: byKey[0][0], members: target.members.slice(1) });
+    // Nothing at this depth: record the miss so the next pass can go deeper.
+    if (byKey.length === 1) {
+        return {
+            order: state.order,
+            maxDepth: state.maxDepth,
+            log: [
+                ...state.log,
+                {
+                    pass: previous.pass + 1,
+                    depth,
+                    criterion: `walk trees ${depth} rings deep — nothing separated`,
+                    target: target.start,
+                    targetSize: target.members.length,
+                    split: false,
+                    blocks: previous.blocks.map((block) => ({ ...block, fresh: false })),
+                },
+            ],
+        };
     }
 
     const blocks: Block[] = [];
@@ -278,17 +291,16 @@ export function advance(
             continue;
         }
 
-        for (const group of groups) {
+        for (const [key, members] of byKey) {
             blocks.push({
                 start: position,
                 degree: block.degree,
-                members: group.members,
-                key: group.key,
+                members,
+                key,
                 fresh: true,
-                twins:
-                    group.members.length > 1 ? allTwins(adjacency, group.members) : undefined,
+                twins: members.length > 1 ? allTwins(adjacency, members) : undefined,
             });
-            position += group.members.length;
+            position += members.length;
         }
     }
 
@@ -300,12 +312,164 @@ export function advance(
             {
                 pass: previous.pass + 1,
                 depth,
-                criterion,
+                criterion: `walk trees ${depth} rings deep`,
                 target: target.start,
                 targetSize: target.members.length,
-                pinned,
+                split: true,
                 blocks,
             },
         ],
     };
+}
+
+/**
+ * Pins one vertex of a group: it leaves the group and becomes a group of one.
+ * The depth resets, so the next passes can see it as a position of its own.
+ */
+export function pinVertex(
+    state: SortState,
+    adjacency: readonly (readonly boolean[])[],
+    vertex: number,
+): SortState {
+    const previous = state.log[state.log.length - 1];
+    const target = previous.blocks.find((block) => block.members.includes(vertex));
+    if (target === undefined || target.members.length < 2) return state;
+
+    const rest = target.members.filter((member) => member !== vertex);
+
+    const blocks: Block[] = [];
+    let position = 1;
+    for (const block of previous.blocks) {
+        if (block !== target) {
+            blocks.push({ ...block, start: position, fresh: false });
+            position += block.members.length;
+            continue;
+        }
+
+        blocks.push({ start: position, degree: block.degree, members: [vertex], fresh: true });
+        position += 1;
+
+        blocks.push({
+            start: position,
+            degree: block.degree,
+            members: rest,
+            fresh: true,
+            twins: rest.length > 1 ? allTwins(adjacency, rest) : undefined,
+        });
+        position += rest.length;
+    }
+
+    return {
+        order: blocks.flatMap((block) => block.members),
+        maxDepth: state.maxDepth,
+        log: [
+            ...state.log,
+            {
+                pass: previous.pass + 1,
+                depth: 0,
+                criterion: "out of depth — this vertex, pinned",
+                target: target.start,
+                targetSize: target.members.length,
+                pinned: vertex,
+                split: true,
+                blocks,
+            },
+        ],
+    };
+}
+
+export interface SearchResult {
+    /** The log and the order of the branch that gave the smallest string. */
+    state: SortState;
+    /** The canonical graph6 of that branch. */
+    key: string;
+    /** True when the branch budget ran out before the search finished. */
+    truncated: boolean;
+}
+
+/** How many branches the search may explore before it gives up. */
+const BRANCH_BUDGET = 400;
+
+function refine(
+    state: SortState,
+    adjacency: readonly (readonly boolean[])[],
+): SortState {
+    let current = state;
+    for (;;) {
+        const next = advance(current, adjacency);
+        if (next === current) return current;
+        current = next;
+    }
+}
+
+/** The graph6 of the current order — the string two graphs are compared by. */
+function orderedString(
+    adjacency: readonly (readonly boolean[])[],
+    order: readonly number[],
+): string {
+    const n = order.length;
+    const reordered: boolean[][] = [];
+    for (let row = 0; row < n; row++) {
+        const line: boolean[] = [];
+        for (let column = 0; column < n; column++) {
+            line.push(adjacency[order[row]][order[column]]);
+        }
+        reordered.push(line);
+    }
+    return toGraph6(reordered);
+}
+
+function search(
+    state: SortState,
+    adjacency: readonly (readonly boolean[])[],
+    budget: { left: number },
+): SearchResult {
+    const refined = refine(state, adjacency);
+    const last = refined.log[refined.log.length - 1];
+    const target = last.blocks.find(
+        (block) => block.members.length > 1 && block.twins !== true,
+    );
+
+    // Nothing left to refine: this branch is a leaf, its string is a candidate.
+    if (target === undefined) {
+        return {
+            state: refined,
+            key: orderedString(adjacency, refined.order),
+            truncated: budget.left <= 0,
+        };
+    }
+
+    // The group resists every depth: try each member, keep the smallest string.
+    let best: SearchResult | null = null;
+    let truncated = false;
+
+    for (const vertex of target.members) {
+        if (budget.left <= 0) {
+            truncated = true;
+            break;
+        }
+        budget.left -= 1;
+
+        const candidate = search(pinVertex(refined, adjacency, vertex), adjacency, budget);
+        truncated = truncated || candidate.truncated;
+        if (best === null || candidate.key < best.key) best = candidate;
+    }
+
+    if (best === null) {
+        return {
+            state: refined,
+            key: orderedString(adjacency, refined.order),
+            truncated: true,
+        };
+    }
+
+    return { state: best.state, key: best.key, truncated };
+}
+
+/**
+ * The signature: refine as far as the keys allow, then branch on every group
+ * that refuses to split, and keep the smallest graph6 over all the branches.
+ */
+export function solve(adjacency: readonly (readonly boolean[])[]): SearchResult {
+    return search(firstPass(adjacency), adjacency, { left: BRANCH_BUDGET });
 }

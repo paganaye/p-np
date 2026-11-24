@@ -115,15 +115,16 @@
                     from a square, but at depth 3 the triangle's tree already shows a
                     <code>^3</code> return and the square's does not — that is the whole point.
                     Pass <em>p</em> looks <em>p</em> rings deep, and every node of the tree carries
-                    the position of its group — so a pinned vertex counts for its neighbours. When
-                    the keys separate nothing, the pass <strong>pins</strong> the first member of the
-                    group: it becomes a group of one, and the next pass can tell its neighbours from
-                    the rest. The <code>A…R</code> labels never enter a key; they only make the log
-                    readable. A group of one vertex is <strong>frozen</strong>, a set of
-                    interchangeable vertices is <strong>twins</strong> (their order cannot change the
-                    matrix), the rest is <strong>tied</strong>. <em>Shuffle labels</em> renumbers the
-                    vertices without touching a single edge — the input graph6 changes, the canonical
-                    one must not.
+                    the position of its group. When the keys separate nothing, the sort goes one
+                    ring deeper — that is how a square and a triangle, both 2-regular, are finally
+                    told apart. When the depth is spent and a group still refuses to split, the
+                    search pins each of its members in turn and keeps the smallest graph6, so the
+                    result is a comparison, not a choice. The <code>A…R</code> labels never enter a
+                    key; they only make the log readable. A group of one vertex is
+                    <strong>frozen</strong>, a set of interchangeable vertices is
+                    <strong>twins</strong> (their order cannot change the matrix), the rest is
+                    <strong>tied</strong>. <em>Shuffle labels</em> renumbers the vertices without
+                    touching a single edge — the input graph6 changes, the canonical one must not.
                 </p>
                 <div id="s2-log" class="s2-log mt-5"></div>
             </div>

@@ -53,9 +53,13 @@ square's does not.
   of that tree also carries the position of its group, so a pinned vertex counts
   for its neighbours. Members sharing a key stay together, the others split; the
   children take the parent's slot, so the order is subdivided in place.
-- When the keys separate nothing, the pass **pins** the first member instead: it
-  becomes a group of one. The next pass then sees it as a position of its own,
-  and the vertices next to it stand out from the rest.
+- When the keys separate nothing, the sort records the miss and goes one ring
+  deeper — that is how a square and a triangle, both 2-regular, are finally told
+  apart at depth 3.
+- When the depth budget is spent and a group still refuses to split, the search
+  **pins** it: each member in turn is taken out of the group, the whole sort is
+  run again, and the branch that gives the smallest graph6 wins. A pin is
+  therefore never a choice, only a comparison.
 - A group of one is **frozen** — nothing can move that vertex across another
   group.
 - A group whose members are pairwise **twins** (a swap exchanges them without
@@ -78,11 +82,10 @@ group cannot change the matrix, so `graph6 canonical` is identical for every
 isomorphic copy.
 
 Otherwise the order inside a tied group is the input order and the string is
-flagged *provisional*. The pin makes this visible: it takes the group's **first**
-member, and "first" is the input order, so two labelled copies can pin different
-vertices. Making that canonical means trying every member of the group and
-keeping the smallest graph6 — the next step, and the same price nauty pays with
-individualization.
+flagged *provisional*. Two things can still stop the search short: the branch
+budget (400 leaves, then the page says so) and a group that resists at every
+depth and is not a twin set — in which case every member is pinned in turn and the
+smallest string is kept, which is canonical as long as the budget holds.
 
 The **Shuffle labels** button renumbers the vertices without adding or removing a
 single edge: `graph6 input` moves, `graph6 canonical` must not. It is a one-click
