@@ -244,6 +244,36 @@ describe("the sort", () => {
     });
 
     /*
+     * The crown K9,9 minus a perfect matching: bipartite, twin-free, transitive.
+     * Every vertex has exactly one non-neighbour on the other side, and those
+     * pairs are the matching — so the two sides and the pairing are read off, and
+     * the only choice left (which side comes first) is settled by comparing the
+     * two candidate strings.
+     */
+    it("reads a crown from its bipartition", () => {
+        const n = 9;
+        const edges: Array<[number, number]> = [];
+        for (let i = 0; i < n; i++) {
+            for (let j = 0; j < n; j++) if (j !== i) edges.push([i, n + j]);
+        }
+
+        const matrix = addEdges(emptyGraph(2 * n), edges);
+        const result = solve(matrix);
+        expect(result.branches).toBe(1);
+
+        const last = result.state.log[result.state.log.length - 1];
+        expect(last.criterion).toBe("crown");
+        expect(last.blocks.length).toBe(n);
+        expect(last.blocks.every((block) => block.settled === true)).toBe(true);
+
+        const random = mulberry32(11);
+        for (let round = 0; round < 5; round++) {
+            const permuted = permute(matrix, shuffle(matrix.length, random));
+            expect(solve(permuted).key).toBe(result.key);
+        }
+    });
+
+    /*
      * K10 minus a perfect matching is complete multipartite with five parts of
      * two. The parts are the answer, so the production reads them and stops: one
      * branch, no pinning, no comparison.

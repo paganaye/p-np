@@ -44,6 +44,8 @@ export interface Block {
     twins?: boolean;
     /** The key that produced this group: the shadow of its members' ball. */
     key?: string;
+    /** True when a production fixed the order inside the group, without searching. */
+    settled?: boolean;
 }
 
 export interface PassLog {
@@ -680,6 +682,122 @@ function induced(
 }
 
 /**
+ * A proper two-colouring, or null when the graph is not bipartite. A connected
+ * bipartite graph has exactly two colourings, mirror images of each other.
+ */
+function twoSides(
+    adjacency: readonly (readonly boolean[])[],
+): [number[], number[]] | null {
+    const n = adjacency.length;
+    const colour = new Array<number>(n).fill(-1);
+
+    for (let start = 0; start < n; start++) {
+        if (colour[start] !== -1) continue;
+        colour[start] = 0;
+        const queue = [start];
+
+        for (let head = 0; head < queue.length; head++) {
+            const vertex = queue[head];
+            for (let other = 0; other < n; other++) {
+                if (!adjacency[vertex][other]) continue;
+                if (colour[other] === -1) {
+                    colour[other] = 1 - colour[vertex];
+                    queue.push(other);
+                } else if (colour[other] === colour[vertex]) {
+                    return null;
+                }
+            }
+        }
+    }
+
+    const left: number[] = [];
+    const right: number[] = [];
+    for (let vertex = 0; vertex < n; vertex++) {
+        if (colour[vertex] === 0) left.push(vertex);
+        else right.push(vertex);
+    }
+    return [left, right];
+}
+
+/**
+ * The crown: K_{n,n} minus a perfect matching. The two sides of the bipartition
+ * are independent, and every vertex has exactly one non-neighbour on the other
+ * side. Those non-neighbour pairs are the matching, so the two sides and the
+ * pairing are read straight off the graph.
+ *
+ * Since all pairs are interchangeable, their order cannot change the matrix; only
+ * the choice of which side comes first can, and that is settled by comparing the
+ * two candidate strings. No search.
+ */
+function crownOrder(
+    adjacency: readonly (readonly boolean[])[],
+): { order: number[]; pairs: Array<[number, number]> } | null {
+    const sides = twoSides(adjacency);
+    if (sides === null) return null;
+
+    const [left, right] = sides;
+    const n = left.length;
+    if (right.length !== n || n < 3) return null;
+
+    const partner = new Map<number, number>();
+    for (const vertex of left) {
+        const missing = right.filter((other) => !adjacency[vertex][other]);
+        if (missing.length !== 1) return null;
+        partner.set(vertex, missing[0] as number);
+    }
+    for (const vertex of right) {
+        const missing = left.filter((other) => !adjacency[vertex][other]);
+        if (missing.length !== 1) return null;
+        partner.set(vertex, missing[0] as number);
+    }
+    for (const [vertex, mate] of partner) {
+        if (partner.get(mate) !== vertex) return null;
+    }
+
+    const forward: number[] = [];
+    for (const vertex of left) forward.push(vertex, partner.get(vertex) as number);
+    const backward: number[] = [];
+    for (const vertex of right) backward.push(vertex, partner.get(vertex) as number);
+
+    const order =
+        orderedString(adjacency, forward) <= orderedString(adjacency, backward)
+            ? forward
+            : backward;
+
+    const pairs: Array<[number, number]> = [];
+    for (let index = 0; index < order.length; index += 2) {
+        pairs.push([order[index] as number, order[index + 1] as number]);
+    }
+
+    return { order, pairs };
+}
+
+function crownResult(
+    adjacency: readonly (readonly boolean[])[],
+    crown: { order: number[]; pairs: Array<[number, number]> },
+): SearchResult {
+    const n = adjacency.length;
+    const blocks: Block[] = crown.pairs.map((pair, index) => ({
+        start: index * 2 + 1,
+        degree: n / 2 - 1,
+        members: [...pair],
+        fresh: true,
+        settled: true,
+    }));
+
+    return {
+        state: {
+            order: crown.order,
+            maxDepth: diameter(adjacency),
+            log: [{ pass: 1, depth: 0, criterion: "crown", blocks }],
+        },
+        key: orderedString(adjacency, crown.order),
+        branches: 1,
+        levels: [1],
+    };
+}
+
+/**
  * The parts of a complete multipartite graph, if it is one: the classes of
  * non-adjacency. Returns null as soon as the relation fails to be an equivalence.
  *
@@ -854,6 +972,9 @@ export function solve(
     if (parts !== null && parts.some((part) => part.length > 1)) {
         return multipartiteResult(adjacency, parts);
     }
+
+    const crown = crownOrder(adjacency);
+    if (crown !== null) return crownResult(adjacency, crown);
 
     const budget = { left: limit, used: 0, levels: [] as number[] };
     const result = search(firstPass(adjacency), adjacency, budget, 0);

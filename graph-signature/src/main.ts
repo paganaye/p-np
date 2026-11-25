@@ -123,7 +123,13 @@ function blockRange(block: Block): string {
 function blockRow(block: Block): string {
     const range = blockRange(block);
     const state =
-        block.members.length === 1 ? "frozen" : block.twins === true ? "twins" : "tied";
+        block.members.length === 1
+            ? "frozen"
+            : block.twins === true
+              ? "twins"
+              : block.settled === true
+                ? "solved"
+                : "tied";
     const full = block.key ?? "";
     const words = full === "" ? "—" : keyJson(full);
 
@@ -204,7 +210,10 @@ function renderSignature(result: SearchResult, failure: string | null): void {
     const twins = last.blocks.filter(
         (block) => block.members.length > 1 && block.twins === true,
     ).length;
-    const tied = groups - frozen - twins;
+    const solved = last.blocks.filter(
+        (block) => block.members.length > 1 && block.twins !== true && block.settled === true,
+    ).length;
+    const tied = groups - frozen - twins - solved;
     const ambiguous = tied;
 
     let red = 0;
@@ -218,7 +227,9 @@ function renderSignature(result: SearchResult, failure: string | null): void {
         "status",
         `${state.log.length} ${state.log.length === 1 ? "pass" : "passes"} · ${groups} ${
             groups === 1 ? "group" : "groups"
-        } · ${frozen} frozen · ${twins} twins · ${tied} tied · ${state.maxDepth} rings${
+        } · ${frozen} frozen · ${twins} twins${solved > 0 ? ` · ${solved} solved` : ""} · ${tied} tied · ${
+            state.maxDepth
+        } rings${
             failure === null ? "" : " · gave up"
         }`,
     );
@@ -272,6 +283,8 @@ function renderSignature(result: SearchResult, failure: string | null): void {
                           ? `complete multipartite — parts of ${pass.blocks
                                 .map((block) => block.members.length)
                                 .join(" · ")}`
+                          : pass.criterion === "crown"
+                            ? `crown — K${pass.blocks.length},${pass.blocks.length} minus a perfect matching`
                           : pass.pinned !== undefined
                             ? `out of rings — pin ${label(pass.pinned)} out of #${pass.target ?? "?"}`
                             : pass.depth === 0

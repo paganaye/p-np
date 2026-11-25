@@ -176,6 +176,10 @@
     text-align: right;
 }
 
+.s2-state--solved {
+    color: var(--color-ink);
+}
+
 .s2-state--frozen {
     color: var(--color-accent);
 }
